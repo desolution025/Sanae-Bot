@@ -7,7 +7,7 @@
 
 from pathlib import Path
 import ujson as json
-from typing import Union, Callable, Iterable, Tuple
+from typing import Union, Callable, Iterable, Tuple, Sequence
 from functools import reduce
 from collections import defaultdict
 
@@ -111,7 +111,7 @@ def comman_rule(match_ev: Event, **kw) -> Callable:
     return ev_type_checker
 
 
-def full_match(cmd: Union[str, Tuple[str]]) -> Rule:
+def full_match(cmd: Union[str, Sequence[str]]) -> Rule:
     """
     :Summary:
         完全匹配规则，完全符合对话时触发规则
@@ -120,12 +120,12 @@ def full_match(cmd: Union[str, Tuple[str]]) -> Rule:
 
     :Args:
 
-        ``cmd``: 要匹配的命令，可以是字符串或字符串组成的Tuple
+        ``cmd``: 要匹配的命令，可以是字符串或字符串组成的Sequence
     """
 
     async def fm_checker(bot: Bot, event: MessageEvent, state: T_State) -> bool:
         msg = str(event.message).strip()
-        if isinstance(cmd, str) and msg == cmd or isinstance(cmd, Tuple) and msg in cmd:
+        if isinstance(cmd, str) and msg == cmd or isinstance(cmd, Sequence) and msg in cmd:
             return True
         else:
             return False
