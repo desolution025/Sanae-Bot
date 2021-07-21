@@ -4,6 +4,7 @@ from typing import Tuple, Optional, Union, Sequence
 
 from src.common.levelsystem import UserLevel
 from src.utils import cgauss
+from .orb import *
 
 
 CARD_LIST = []  # 符卡列表
@@ -19,7 +20,8 @@ miner = {
 
 record = {
     'uid': int,  # 用户id
-    'time': datetime,  # 入场时间
+    'admission': datetime,  # 入场时间
+    'cooling': int,  # 最后一次入场时开始的冷却时间，以分钟为单位
     'toll': int,  # 交付的费用
     'items': [],  # 使用的符卡
     'income': int,  # 获得的收入（金币）
@@ -38,6 +40,7 @@ class Mine:
     """矿洞类
 
     Attributes:
+        number (int): 矿场编号
         owner (int): 矿场主
         location (int): 开矿地点，用于交互报告时通知矿场主的位置，群号，私聊开矿的则为0
         start_up_captital (int): 启动资金
@@ -78,14 +81,19 @@ class Mine:
         self.income = 0  # 当前获得的收入
         self.distributions = {}  # 矿产分布，这个矿洞能产出的道具以及比率，比率应该会随着深度而成连续噪波变化
         self.status = []  # 状态，如加固、脆弱、矿产率上升下降之类的为key，状态内也为dict，记录剩余持续时间、剩余持续深度、
-        self.miners = {}  # 玩家列表，记录玩家冷却
-        self.sheet = []  # 行动表，记录每次挖矿的玩家及其使用的符卡与获得的道具等信息
+        self.miners = {}  # 玩家列表，记录玩家冷却，数据库中单独在一个表里
+        self.sheet = []  # 行动表，记录每次挖矿的玩家及其使用的符卡与获得的道具等信息，数据库中单独在一个表里
 
         while True:
             self.number = randint(1, 1000)
             if self.number not in Mines_Collection:
                 Mines_Collection[self.number] = self
                 break
+
+    async def store_mine(self):
+        """将自己存入数据库进行持久化"""
+        await dev_mine(self)
+
     def gen_base_coll_prob(self):
         """生成一个适合用于初始坍塌率的float，概率以0.005为轴成高斯分布"""
         prob = gauss(0.005, 0.0008)
@@ -175,7 +183,7 @@ class Mine:
 
         return r_oof, r_card, r_item
 
-    def mine(self, uid: int, cards: Sequence[str]):
+    async def mine(self, uid: int, cards: Sequence[str]):
         """执行开采
 
         Args:
@@ -227,19 +235,24 @@ class Mine:
             
             # 计算奖励
             r_oof, r_card, r_item = self.get_rewards(cru_op, cards)
-    
+
+            # 更新矿洞和矿工记录 TODO：根据status变化有不同的传入数据
+            await update_mine(self)
+            await update_miner(self, uid, cooling, toll, cards, r_oof, r_card.extend(r_item))
+
             return (coll_up, fee_up, breadth_change), (r_oof, r_card, r_item),
 
         else:  # 触发坍塌
             if 'escape' in cards:  # 逃脱符依然能获得奖励
                 r_oof, r_card, r_item = self.get_rewards(cru_op, cards)
                 return None, (r_oof, r_card, r_item)
-            self.collapse()
+            await self.collapse(uid)
             return None, None
 
-    def collapse(self):
-        self.status.append('collapse')
+    async def collapse(self, vimtim: int):
+        # self.status.append('collapse')
         del Mines_Collection[self.number]
+        await mine_collapse(self, vimtim)
 
 
 def all_mines():

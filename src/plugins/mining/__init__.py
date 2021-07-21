@@ -1,8 +1,9 @@
 from functools import partial
+from random import choice
 from typing import Union
 from asyncio import sleep as asleep
 
-from nonebot import MatcherGroup
+from nonebot import MatcherGroup, get_driver
 from nonebot_adapter_gocq.exception import ActionFailed
 
 from src.common import Bot, MessageEvent, MessageSegment, T_State, CANCEL_EXPRESSION, inputting_interaction
@@ -10,11 +11,23 @@ from src.common.log import logger
 from src.common.rules import full_match, sv_sw
 from src.common.levelsystem import UserLevel
 from .mine import *
+from .orb import refresh_miners_list
 from src.utils import reply_header
 
 
 plugin_name = '挖矿'
 plugin_usage = ''
+
+
+#——————————————————读取数据库——————————————————#
+
+driver=get_driver()
+
+@driver.on_startup
+async def read_mine_db():
+    await refresh_miners_list()
+
+#—————————————————————————————————————————————#
 
 
 mining = MatcherGroup(type='message', rule=sv_sw(plugin_name, plugin_usage), priority=2)
@@ -86,6 +99,8 @@ async def use_item(bot: Bot, event: MessageEvent, state: T_State):
     location = 0 if event.message_type == 'private' else event.group_id
     new_mine = Mine(owner=event.user_id, location=location, start_up_capital=state['capital'])
     UserLevel(event.user_id).turnover(-state['capital'])
+
+    await new_mine.store_mine()
 
     name = event.sender.card if event.message_type == 'group' else event.sender.nickname
     if not name.strip():
@@ -183,7 +198,7 @@ async def mining_work(bot: Bot, event: MessageEvent, state: T_State):
     use_cards = state['cards'] if 'cards' in state and state['cards'] is not None else []
     logger.debug(f'对{target.number}号矿洞使用符卡:{use_cards}')
     
-    update, rewards = target.mine(uid=event.user_id, cards=use_cards)
+    update, rewards = await target.mine(uid=event.user_id, cards=use_cards)
     name = get_name(event)
     if update is not None:
         oof, cards, items = rewards

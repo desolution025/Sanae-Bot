@@ -179,94 +179,94 @@ class FreqLimiter:
         return self.__class__.next_time[self.key] - time.time()
 
 
-class DailyNumberLimiter:
-    """使用此类限制每个用户单个功能的调用量
-    """
+# class DailyNumberLimiter:
+#     """使用此类限制每个用户单个功能的调用量
+#     """
 
-    # 查询所有信息列表
-    with QbotDB() as conn:
-        # 查询数据库中所有存在的功能的名称存入列表中
-        _count_tuple =  conn.queryall("SELECT COLUMN_NAME FROM information_schema.COLUMNS "
-        "WHERE TABLE_SCHEMA = 'qbotdb' AND TABLE_NAME = 'calltimes' AND column_name like '%%_count';")
-        func_name_ls = list(map(lambda x: x[0].split('_')[0], _count_tuple))
-        logger.info(f'当前数据库内功能限制列表：{str(func_name_ls)}')
-        del _count_tuple
+#     # 查询所有信息列表
+#     with QbotDB() as conn:
+#         # 查询数据库中所有存在的功能的名称存入列表中
+#         _count_tuple =  conn.queryall("SELECT COLUMN_NAME FROM information_schema.COLUMNS "
+#         "WHERE TABLE_SCHEMA = 'qbotdb' AND TABLE_NAME = 'calltimes' AND column_name like '%%_count';")
+#         func_name_ls = list(map(lambda x: x[0].split('_')[0], _count_tuple))
+#         logger.info(f'当前数据库内功能限制列表：{str(func_name_ls)}')
+#         del _count_tuple
 
-    def __init__(self, uid: int, func_name: str, max_num: int):
-        """
+#     def __init__(self, uid: int, func_name: str, max_num: int):
+#         """
 
-        Args:
-            uid (int): 用户ID
-            func_name (str): 服务名
-            max_num (int): 最大调用次数
-        """
-        self.conn = QbotDB()  # 注意没有使用上下文管理，要手动commit()
+#         Args:
+#             uid (int): 用户ID
+#             func_name (str): 服务名
+#             max_num (int): 最大调用次数
+#         """
+#         self.conn = QbotDB()  # 注意没有使用上下文管理，要手动commit()
 
-        # 如果没有func_name列增加三个相关列
-        if func_name not in self.__class__.func_name_ls:
-            logger.debug(f'A new func {func_name} will be add in table calltimes')
-            self.__class__.func_name_ls.append(func_name)
-            self.conn.update(f"ALTER TABLE calltimes  ADD {func_name}_day DATE, ADD {func_name}_count INT DEFAULT 0, ADD {func_name}_total INT DEFAULT 0;")
-            self.conn.update(f"UPDATE calltimes SET {func_name}_day = CURDATE();")
-            logger.info(f'Add func_name: {func_name} to table calltimes')
-            self.conn.commit()
+#         # 如果没有func_name列增加三个相关列
+#         if func_name not in self.__class__.func_name_ls:
+#             logger.debug(f'A new func {func_name} will be add in table calltimes')
+#             self.__class__.func_name_ls.append(func_name)
+#             self.conn.update(f"ALTER TABLE calltimes  ADD {func_name}_day DATE, ADD {func_name}_count INT DEFAULT 0, ADD {func_name}_total INT DEFAULT 0;")
+#             self.conn.update(f"UPDATE calltimes SET {func_name}_day = CURDATE();")
+#             logger.info(f'Add func_name: {func_name} to table calltimes')
+#             self.conn.commit()
 
-        result = self.conn.queryone(
-            f'select {func_name}_day, {func_name}_count, {func_name}_total from calltimes where qq_number=%s;',
-            (uid,)
-            )  # 暂时没发现列可以通过传参方式替换的方法，只能动态拼装
+#         result = self.conn.queryone(
+#             f'select {func_name}_day, {func_name}_count, {func_name}_total from calltimes where qq_number=%s;',
+#             (uid,)
+#             )  # 暂时没发现列可以通过传参方式替换的方法，只能动态拼装
 
-        if result:
-            self.last_call, self.count, self.total = result
-            # 可能之前是调用其他功能时自动创建的记录所以当前功能的最后调用时间是null
-            if self.last_call is None:
-                self.conn.update(f"UPDATE calltimes SET {func_name}_day = CURDATE() WHERE qq_number=%s;", (uid,))
-                self.conn.commit()
-                self.last_call = date.today()
-        else:
-            # 如果没有用户记录在相关列上增加用户记录并设置为初始值
-            self.conn.insert(
-                f"INSERT INTO calltimes (qq_number, {func_name}_day, {func_name}_count, {func_name}_total) "
-                "VALUES(%s, CURDATE(), 0, 0)",
-                (uid,)
-                )
-            self.conn.commit()
-            self.last_call, self.count, self.total = date.today(), 0, 0
+#         if result:
+#             self.last_call, self.count, self.total = result
+#             # 可能之前是调用其他功能时自动创建的记录所以当前功能的最后调用时间是null
+#             if self.last_call is None:
+#                 self.conn.update(f"UPDATE calltimes SET {func_name}_day = CURDATE() WHERE qq_number=%s;", (uid,))
+#                 self.conn.commit()
+#                 self.last_call = date.today()
+#         else:
+#             # 如果没有用户记录在相关列上增加用户记录并设置为初始值
+#             self.conn.insert(
+#                 f"INSERT INTO calltimes (qq_number, {func_name}_day, {func_name}_count, {func_name}_total) "
+#                 "VALUES(%s, CURDATE(), 0, 0)",
+#                 (uid,)
+#                 )
+#             self.conn.commit()
+#             self.last_call, self.count, self.total = date.today(), 0, 0
 
-        self.uid = uid
-        self.func_name = func_name
-        self.max_num = max_num
+#         self.uid = uid
+#         self.func_name = func_name
+#         self.max_num = max_num
 
-    def check(self, close_conn: bool=True) -> bool:
-        """检查是否已超过今日最大调用量
+#     def check(self, close_conn: bool=True) -> bool:
+#         """检查是否已超过今日最大调用量
 
-        Args:
-            close_conn (bool, optional): 是否在检查之后直接关闭连接. Defaults to True.
+#         Args:
+#             close_conn (bool, optional): 是否在检查之后直接关闭连接. Defaults to True.
 
-        Returns:
-            bool: 次数小于最大调用量时为True
-        """
-        if self.last_call < date.today():
-            self.count = 0
-            self.conn.update(f'UPDATE calltimes SET {self.func_name}_count=0, {self.func_name}_day=CURDATE() WHERE qq_number=%s', (self.uid,))
+#         Returns:
+#             bool: 次数小于最大调用量时为True
+#         """
+#         if self.last_call < date.today():
+#             self.count = 0
+#             self.conn.update(f'UPDATE calltimes SET {self.func_name}_count=0, {self.func_name}_day=CURDATE() WHERE qq_number=%s', (self.uid,))
 
-        if not self.conn.q:
-            self.conn.commit()
-        if close_conn:
-            self.conn.close()
-        return self.count < self.max_num
+#         if not self.conn.q:
+#             self.conn.commit()
+#         if close_conn:
+#             self.conn.close()
+#         return self.count < self.max_num
 
-    def increase(self, num: int=1):
-        """增加调用量记录
+#     def increase(self, num: int=1):
+#         """增加调用量记录
 
-        Args:
-            num (int, optional): 增加的次数. Defaults to 1.
-        """
-        self.count += num
-        self.total += num
-        self.conn.update(f"UPDATE calltimes SET {self.func_name}_count={self.func_name}_count+1, {self.func_name}_total={self.func_name}_total+1 WHERE qq_number=%s", (self.uid,))
-        self.conn.commit()
-        self.conn.close()
+#         Args:
+#             num (int, optional): 增加的次数. Defaults to 1.
+#         """
+#         self.count += num
+#         self.total += num
+#         self.conn.update(f"UPDATE calltimes SET {self.func_name}_count={self.func_name}_count+1, {self.func_name}_total={self.func_name}_total+1 WHERE qq_number=%s", (self.uid,))
+#         self.conn.commit()
+#         self.conn.close()
 
 
 class PagingBar:

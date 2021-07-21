@@ -19,7 +19,8 @@ nb-cli = "^0.4.1"
 nonebot-adapter-gocq = "^2.0.0-alpha.13"
 toml = "^0.10.2"
 nonebot-plugin-apscheduler = "^0.1.2"
-PyMySQL = "^1.0.2"
+aiomysql = "^0.0.21"
+aiofiles = "^0.7.0"
 
 [tool.poetry.dev-dependencies]
 

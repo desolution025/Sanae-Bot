@@ -3,8 +3,8 @@ import configparser
 from pydantic import BaseModel
 
 # from ipaddress import IPv4Address
-import pymysql
-from dbutils.pooled_db import PooledDB
+import aiomysql
+from pymysql import Error as PymysqlError
 
 try:
     from src.common.log import logger
@@ -27,6 +27,19 @@ cfg.read(Path(__file__).parent/"dbpool.ini")
 dbcfg = DBConfig(**dict(cfg.items("client")))  # 数据库配置
 
 
+class AttrDict(dict):
+    """Dict that can get attribute by dot, and doesn't raise KeyError"""
+
+    def __getattr__(self, name):
+        try:
+            return self[name]
+        except KeyError:
+            return None
+
+class AttrDictCursor(aiomysql.DictCursor):
+    dict_type = AttrDict
+
+
 class MysqlPool:
     """
     :Summary:
@@ -42,88 +55,84 @@ class MysqlPool:
     _pool = None
 
     def __init__(self, db: str, **kw):
-        if self.__class__._pool is None:
-            self.__class__._pool = PooledDB(pymysql,
-                                            mincached=1,
-                                            maxcached=5,
-                                            maxshared=10,
-                                            maxconnections=10,
-                                            blocking=True,
-                                            maxusage=100,
-                                            setsession=None,
-                                            reset=True,
-                                            **kw,
-                                            db=db,
-                                            charset="utf8mb4")  #TODO: 有个不明所以的utf8mb4编码错误
-        self._conn = self.__class__._pool.connection()
-        self._cursor = self._conn.cursor()
+        self.dbinfo = kw
+        self.dbinfo['db'] = db
+        self.dbinfo['charset'] = 'utf8mb4'
         self.q = True # 查询模式，用于自动在上下文管理中判断是否需要执行commit
 
-    def _execute(self, cmd, param=()):
+    async def get_conn(self):
+        if self.__class__._pool is None:
+            self.__class__._pool = await aiomysql.create_pool(**self.dbinfo)
+        self._conn : aiomysql.Connection = await self.__class__._pool.acquire()
+        self._cursor : aiomysql.DictCursor = await self._conn.cursor(AttrDictCursor)
+        return self
+
+    async def _execute(self, cmd, param=()):
         try:
-            self._cursor.execute(cmd, param)
-        except pymysql.Error as err:
+            return await self._cursor.execute(cmd, param)
+        except PymysqlError as err:
             logger.exception(err)
 
-    def queryall(self, cmd, param=()):
-        self._execute(cmd, param)
-        return self._cursor.fetchall()
+    async def queryall(self, cmd, param=()):
+        await self._execute(cmd, param)
+        return await self._cursor.fetchall()
 
-    def queryone(self, cmd, param=()):
-        """
-        ※除非能确定返回值只有一项否则调用此方法时命令要增加limit 1条件不然会触发Unread result found异常
-        """
-        self._execute(cmd, param)
-        return self._cursor.fetchone()
+    async def queryone(self, cmd, param=()):
+        await self._execute(cmd, param)
+        return await self._cursor.fetchone()
 
-    def querymany(self, cmd, num, param=()):
-        self._execute(cmd, param)
-        return self._cursor.fetchmany(num)
+    async def querymany(self, cmd, num, param=()):
+        await self._execute(cmd, param)
+        return await self._cursor.fetchmany(num)
 
-    def insert(self, cmd, param=()):
-        self._execute(cmd, param)
+    async def insert(self, cmd, param=()):
+        affect_rows_numbers = await self._execute(cmd, param)
+        self.q = False
+        return affect_rows_numbers
+
+    async def insertmany(self, cmd, param=[]):
+        await self._cursor.executemany(cmd, param)
         self.q = False
 
-    def insertmany(self, cmd, values):
-        self._cursor.executemany(cmd, values)
+    async def update(self, cmd, param=()):
+        affect_rows_numbers = await self._execute(cmd, param)
         self.q = False
+        return affect_rows_numbers
 
-    def update(self, cmd, param=()):
-        self._execute(cmd, param)
+    async def delete(self, cmd, param=()):
+        affect_rows_numbers = await self._execute(cmd, param)
         self.q = False
+        return affect_rows_numbers
 
-    def delete(self, cmd, param=()):
-        self._execute(cmd, param)
-        self.q = False
-
-    def begin(self):
+    async def begin(self):
         """
         @summary: 开启事务
         """
         # self._conn.autocommit(0)
-        self._conn.begin()
+        await self._conn.begin()
 
-    def commit(self):
-        self._conn.commit()
+    async def commit(self):
+        await self._conn.commit()
 
-    def rollback(self):
-        self._conn.rollback()
+    async def rollback(self):
+        await self._conn.rollback()
 
-    def close(self):
+    async def close(self):
         try:
-            self._cursor.close()
-            self._conn.close()
-        except pymysql.Error as err:
+            await self._cursor.close()
+            self.__class__._pool.release(self._conn)
+        except PymysqlError as err:
             logger.exception(err)
 
-    def __enter__(self):
+    async def __aenter__(self):
+        await self.get_conn()
         return self
     
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
         if exc_type is None:
             if self.q is False:
-                self.commit()
-            self.close()
+                await self.commit()
+            await self.close()
         else:
             logger.error(f'EXCType: {exc_type}; EXCValue: {exc_val}; EXCTraceback: {exc_tb}')
 
@@ -138,7 +147,7 @@ class QbotDB(MysqlPool):
 
 class GalleryDB(MysqlPool):
     """
-    美图图库连接池，lable: gallery
+    图库连接池，lable: gallery
     """
     def __init__(self,) -> None:
         super().__init__('gallery', **dbcfg.dict())
@@ -147,6 +156,22 @@ class GalleryDB(MysqlPool):
 if __name__ == "__main__":
     # print(dbcfg.json())
     # print(dbcfg.dict())
-    with QbotDB() as qb:
-        result = qb.queryall("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = 'qbotdb' AND TABLE_NAME = 'calltimes' AND column_name like '%%_count';")
+    import asyncio
+
+    async def tst():
+        async with QbotDB() as qb:
+            result = await qb.queryall("select * from userinfo limit 5")
+        print(type(result))
         print(result)
+        for r in result:
+            print(type(r))
+            if isinstance(r, AttrDict):
+                print(r.qq_number)
+    
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(tst())
+    print('run over')
+    # loop.close()
+    # with QbotDB() as qb:
+    #     result = qb.queryall("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = 'qbotdb' AND TABLE_NAME = 'calltimes' AND column_name like '%%_count';")
+    #     print(result)
