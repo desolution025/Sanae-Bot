@@ -5,6 +5,7 @@ from inspect import signature
 
 from nonebot.matcher import Matcher
 from nonebot.typing import T_Handler, T_State
+from nonebot.exception import FinishedException
 from nonebot_adapter_gocq.message import MessageSegment
 from nonebot_adapter_gocq.exception import ActionFailed
 
@@ -71,6 +72,7 @@ class UserLevel:
         async with QbotDB() as qb:
             result = await qb.queryall('SELECT qq_number FROM userinfo')
         cls.user_ls = [user.qq_number for user in result]
+        logger.success(f'连接数据库，读取到 {len(cls.user_ls)} 条用户')
         if len(set(cls.user_ls)) != len(result):
             logger.warning("There are duplicate record(s) in table: userinfo !!")
 
@@ -87,6 +89,7 @@ class UserLevel:
         self.last_sign = datetime.strptime('2020-10-05 12:22:00','%Y-%m-%d %H:%M:%S')
         self.total_sign = 0
         self.__class__.user_ls.append(self.uid)  # 用户列表加入该用户
+        logger.info(f'注册一个新用户：{self.uid}')
 
     async def load_user(self):
         if self.uid in self.__class__.user_ls:
@@ -95,11 +98,11 @@ class UserLevel:
                                     'select `level`, `exp`, fund, last_sign, total_sign from userinfo where qq_number=%s',
                                     (self.uid,)
                                     )
-            self.level = info[0]
-            self.exp = info[1]
-            self.fund = info[2]
-            self.last_sign = info[3] # 上次签到时间
-            self.total_sign = info[4]
+            self.level = info.level
+            self.exp = info.exp
+            self.fund = info.fund
+            self.last_sign = info.last_sign # 上次签到时间
+            self.total_sign = info.total_sign
         else:
             await self.create_user()
         self.loaded = True
@@ -216,7 +219,7 @@ class UserLevel:
         if not self.loaded:
             await self.load_user()
         if check_overdraft and value < 0:
-            if self.fund + value > 0:
+            if self.fund + value >= 0:
                 self.fund += value
                 overdraft = False
 
@@ -237,7 +240,7 @@ class UserLevel:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if exc_type:
+        if exc_type and exc_type is not FinishedException:
             logger.error(f'EXCType: {exc_type}; EXCValue: {exc_val}; EXCTraceback: {exc_tb}')
 
 def is_user(uid: int) -> bool:

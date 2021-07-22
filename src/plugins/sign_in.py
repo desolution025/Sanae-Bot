@@ -1,12 +1,19 @@
 from typing import Optional
 from datetime import datetime, date
 
-from nonebot import MatcherGroup
+from nonebot import MatcherGroup, get_driver
 
-from src.common import Bot, MessageEvent
+from src.common import Bot, MessageEvent, T_State
 from src.utils import reply_header, cgauss
 from src.common.levelsystem import UserLevel, exp_step
 from src.common.dbpool import QbotDB
+
+
+driver = get_driver()
+
+@driver.on_startup
+async def read_users_data():
+    await UserLevel.load_users_data()
 
 
 # 一个进度条用来显示经验值进度
@@ -52,30 +59,35 @@ def progress_bar(value: int, max: int) -> str:
 level_sys = MatcherGroup(type="message")
 
 
+def sign_rule(bot: Bot, event: MessageEvent, state: T_State):
+    if len(event.message.extract_plain_text().strip()) < 2:
+        return True
+    # TODO:看看comand里的rule中message是不是去除命令和昵称了
+
 sign = level_sys.on_command("签到")
 
 @sign.handle()
 async def sign_(bot: Bot, event: MessageEvent):
     uid = event.user_id
-    user = UserLevel(uid)
+    async with UserLevel(uid) as user:
 
-    # 是否可以签到
-    today = date.today()
-    last_sign_day = user.last_sign.date()
+        # 是否可以签到
+        today = date.today()
+        last_sign_day = user.last_sign.date()
 
-    if today > last_sign_day:
-        with QbotDB() as botdb:
-            botdb.update('update userinfo set `last_sign`=NOW(), total_sign=total_sign+1 where qq_number=%s;', (uid,))
+        if today > last_sign_day:
+            async with QbotDB() as botdb:
+                await botdb.update('update userinfo set `last_sign`=NOW(), total_sign=total_sign+1 where qq_number=%s;', (uid,))
+            
+            gndexp = cgauss(8, 2, 0)
+            gndfund = cgauss(25, 3, 0)
+
+            await user.expup(gndexp, bot, event)
+            await user.turnover(gndfund)
+            await sign.send(reply_header(event, f'感谢签到，经验值+{gndexp}，资金+{gndfund}!'))
         
-        gndexp = cgauss(8, 2, 0)
-        gndfund = cgauss(25, 3, 0)
-
-        await user.expup(gndexp, bot, event)
-        user.turnover(gndfund)
-        await sign.send(reply_header(event, f'感谢签到，经验值+{gndexp}，资金+{gndfund}!'))
-    
-    else:
-        await sign.finish(reply_header(event, '今天你已经签到过了哦~'))
+        else:
+            await sign.finish(reply_header(event, '今天你已经签到过了哦~'))
 
 
 query_level = level_sys.on_command('查询等级', aliases={'等级查询'})
@@ -83,21 +95,21 @@ query_level = level_sys.on_command('查询等级', aliases={'等级查询'})
 @query_level.handle()
 async def querylevel(bot: Bot, event: MessageEvent):
     uid = event.user_id
-    user = UserLevel(uid)
-    if event.message_type == 'group':
-        name = event.sender.card or event.sender.nickname
-    else:
-        name = event.sender.nickname
-    msg = ' {name}\n 等级：Lv.{level}\n{pg_bar}\n EXP:{exp}/{max}\n 金币:{fund}\n 共签到：{total_sign}次\n 最后一次签到：\n {last_sign}'.format(
-        name = name,
-        level = user.level,
-        pg_bar = progress_bar(user.exp, exp_step(user.level)),
-        exp = user.exp,
-        max = exp_step(user.level),
-        fund = user.fund,
-        total_sign = user.total_sign,
-        last_sign = user.last_sign if user.last_sign > datetime(2020, 11, 27) else '还未签到过'
-        )
-    await query_level.finish(msg)
+    async with UserLevel(uid) as user:
+        if event.message_type == 'group':
+            name = event.sender.card or event.sender.nickname
+        else:
+            name = event.sender.nickname
+        msg = ' {name}\n 等级：Lv.{level}\n{pg_bar}\n EXP:{exp}/{max}\n 金币:{fund}\n 共签到：{total_sign}次\n 最后一次签到：\n {last_sign}'.format(
+            name = name,
+            level = user.level,
+            pg_bar = progress_bar(user.exp, exp_step(user.level)),
+            exp = user.exp,
+            max = exp_step(user.level),
+            fund = user.fund,
+            total_sign = user.total_sign,
+            last_sign = user.last_sign if user.last_sign > datetime(2020, 11, 27) else '还未签到过'
+            )
+        await query_level.finish(msg)
 
 # TODO: 连续签到天数
