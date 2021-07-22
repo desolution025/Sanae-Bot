@@ -20,7 +20,6 @@ def exp_step(level: int) -> int:
     return 10 * level ** 2
 
 
-
 def cd_step(level: int, k: int=180, alpha: float=1.5) -> int:
     """冷却步幅
 
@@ -51,6 +50,8 @@ class UserLevel:
     total_sign (int): 总签到次数
     """
 
+    user_ls = None
+
     def __init__(self, uid: int, level: int=0, exp: int=0, fund: int=0) -> None:
         """不存在记录时会自动创建数据
 
@@ -60,31 +61,48 @@ class UserLevel:
             exp (int, optional): 用户经验值. Defaults to 0.
             fund (int, optional): 用户资金. Defaults to 0.
         """
+        assert self.__class__.user_ls is not None, '用户等级系统未初始化！！'
+
         self.uid = uid
-        botdb = QbotDB()
-        info = botdb.queryone(
-                            'select `level`, `exp`, fund, last_sign, total_sign from userinfo where qq_number=%s',
-                            (uid,)
+        self.loaded = False  # 是否已经读取了用户数据
+    
+    @classmethod
+    async def load_users_data(cls):
+        async with QbotDB() as qb:
+            result = await qb.queryall('SELECT qq_number FROM userinfo')
+        cls.user_ls = [user.qq_number for user in result]
+        if len(set(cls.user_ls)) != len(result):
+            logger.warning("There are duplicate record(s) in table: userinfo !!")
+
+    async def create_user(self):
+        async with QbotDB() as qb:
+            await qb.insert(
+                            "INSERT INTO userinfo (qq_number, `level`, `exp`, fund, last_sign, total_sign) "
+                            "VALUES(%s, 0, 0, 0, '2020-10-05 12:22:00', 0)",
+                            (self.uid,)
                             )
-        if info:
+        self.level = 0
+        self.exp = 0
+        self.fund = 0
+        self.last_sign = datetime.strptime('2020-10-05 12:22:00','%Y-%m-%d %H:%M:%S')
+        self.total_sign = 0
+        self.__class__.user_ls.append(self.uid)  # 用户列表加入该用户
+
+    async def load_user(self):
+        if self.uid in self.__class__.user_ls:
+            async with QbotDB() as qb:
+                info = await qb.queryone(
+                                    'select `level`, `exp`, fund, last_sign, total_sign from userinfo where qq_number=%s',
+                                    (self.uid,)
+                                    )
             self.level = info[0]
             self.exp = info[1]
             self.fund = info[2]
             self.last_sign = info[3] # 上次签到时间
             self.total_sign = info[4]
         else:
-            botdb.insert(
-                        "INSERT INTO userinfo (qq_number, `level`, `exp`, fund, last_sign, total_sign) "
-                        "VALUES(%s, 0, 0, 0, '2020-10-05 12:22:00', 0)",
-                        (uid,)
-                        )
-            botdb.commit()
-            self.level = level
-            self.exp = exp
-            self.fund = fund
-            self.last_sign = datetime.strptime('2020-10-05 12:22:00','%Y-%m-%d %H:%M:%S')
-            self.total_sign = 0
-        botdb.close()
+            await self.create_user()
+        self.loaded = True
 
     async def levelup(self, bot: Bot, event: Optional[MessageEvent], botdb: QbotDB, *, gid: Optional[int]=None):
         """经验值足够时提升等级并发送升级提醒
@@ -104,7 +122,7 @@ class UserLevel:
         self.fund += gndfund
         await self.ch_lv_notice(bot, event, botdb, up=True, gid=gid, gndfund=gndfund)
 
-        botdb.update('update userinfo set level=%s, exp=%s, fund=%s where qq_number=%s', (self.level, self.exp, self.fund, self.uid,))
+        await botdb.update('update userinfo set level=%s, exp=%s, fund=%s where qq_number=%s', (self.level, self.exp, self.fund, self.uid,))
         if self.exp >= exp_step(self.level):
             await self.levelup(bot, event, botdb, gid=gid)
         else:
@@ -123,7 +141,7 @@ class UserLevel:
         self.level -= 1
         await self.ch_lv_notice(bot, event, botdb, up=False, gid=gid)
 
-        botdb.update('update userinfo set level=%s, exp=%s where qq_number=%s', (self.level, self.exp, self.uid,))
+        await botdb.update('update userinfo set level=%s, exp=%s where qq_number=%s', (self.level, self.exp, self.uid,))
 
         if self.exp < 0 and self.level > 0:
             await self.leveldown(bot, event, botdb, gid=gid)
@@ -173,16 +191,19 @@ class UserLevel:
             bot (Bot): 传给升级事件的Bot对象
             event (Optional[MessageEvent]): 传给升级事件的Event对象，不传入时则必须指定gid来确定发送消息的群
         """
+        if not self.loaded:
+            await self.load_user()
+
         self.exp += value
-        with QbotDB() as botdb:
+        async with QbotDB() as botdb:
             if self.exp >= exp_step(self.level): # 检测经验值是否超过本级上限，是则升级
                 await self.levelup(bot, event, botdb, gid=gid)
             elif self.exp < 0 and self.level > 0:  # 只有等级大于0的时候才能降级，否则直接往下扣 
                 await self.leveldown(bot, event, botdb, gid=gid)
             else:
-                botdb.update('update userinfo set `exp`=%s where qq_number=%s;', (self.exp, self.uid,))
+                await botdb.update('update userinfo set `exp`=%s where qq_number=%s;', (self.exp, self.uid,))
 
-    def turnover(self, value: int, *, check_overdraft: bool=True):
+    async def turnover(self, value: int, *, check_overdraft: bool=True):
         """花费资金，持有资金小于要花费的金额时提示透支
 
         Args:
@@ -192,44 +213,42 @@ class UserLevel:
         Returns:
             tuple[int, bool]: 执行后的资金以及是否透支
         """
+        if not self.loaded:
+            await self.load_user()
         if check_overdraft and value < 0:
             if self.fund + value > 0:
                 self.fund += value
                 overdraft = False
 
-                with QbotDB() as botdb:
-                    botdb.update('update userinfo set fund=%s where qq_number=%s', (self.fund, self.uid))
+                async with QbotDB() as botdb:
+                    await botdb.update('update userinfo set fund=%s where qq_number=%s', (self.fund, self.uid))
             else:
                 overdraft = True
         else:
             self.fund += value
-            with QbotDB() as botdb:
-                    botdb.update('update userinfo set fund=%s where qq_number=%s', (self.fund, self.uid))
+            async with QbotDB() as botdb:
+                await botdb.update('update userinfo set fund=%s where qq_number=%s', (self.fund, self.uid))
             overdraft = self.fund < 0
 
         return self.fund, overdraft
 
+    async def __aenter__(self):
+        await self.load_user()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if exc_type:
+            logger.error(f'EXCType: {exc_type}; EXCValue: {exc_val}; EXCTraceback: {exc_tb}')
 
 def is_user(uid: int) -> bool:
     """查询是否是使用过bot的用户"""
+    return uid in UserLevel.user_ls
 
-    with QbotDB() as qb:
-        result = qb.queryone("SELECT 1 FROM userinfo WHERE qq_number=%s AND (`exp`>0 OR `level`>0) LIMIT 1;", (uid,))
-    return bool(result)
 
 def filter_users(*uids):
     """过滤出使用过bot的用户"""
+    return [uid for uid in uids if is_user(uid)]
 
-    with QbotDB() as qb:
-        users = []
-        if len(uids) > 1:
-            result = qb.queryall(f"SELECT qq_number FROM userinfo WHERE qq_number in {tuple(uids)}")
-            if result:
-                users = [i[0] for i in result]
-        else:
-            if is_user(uids[0]):
-                users = [uids[0]]
-    return users
 
 class FuncLimiter:
     """集成各种条件的功能限制器
@@ -302,8 +321,8 @@ class FuncLimiter:
                         await matcher.finish(reply_header(event, msg))
                     logger.debug('频率检测通过')
 
-                    nlmt = DailyNumberLimiter(uid, self.func_name, self.max_free)
-                    in_free = nlmt.check()
+                    async with DailyNumberLimiter(uid, self.func_name, self.max_free) as nlmt:
+                        in_free =  await nlmt.check()
                     if self.max_limit:
                         if self.max_free == 0:
                             await matcher.finish(reply_header(event, '此功能关闭中...'))
@@ -312,12 +331,12 @@ class FuncLimiter:
                     logger.debug('每日调用限制检测通过')
 
                     if self.cost and not in_free:
-                        userinfo = UserLevel(uid)
-                        if userinfo.fund < self.cost:
-                            refuse_msg = overdraft.format(left_fund = userinfo.fund)
-                            if userinfo.level == 0:
-                                refuse_msg += '，先[签到]领取资金吧'
-                            await matcher.finish(reply_header(event, refuse_msg))
+                        async with UserLevel(uid) as userinfo:
+                            if userinfo.fund < self.cost:
+                                refuse_msg = overdraft.format(left_fund = userinfo.fund)
+                                if userinfo.level == 0:
+                                    refuse_msg += '，先[签到]领取资金吧'
+                                await matcher.finish(reply_header(event, refuse_msg))
                     logger.debug('资金检测通过')
 
                 return await self.call_source(func, bot, event, state, matcher)
@@ -344,18 +363,17 @@ class FuncLimiter:
                 if not (self.only_group is True and event.message_type == 'private') and result == branch:
                     logger.debug(f'{func.__name__}完整执行，进行结算')
                     uid = event.user_id
-                    userinfo = UserLevel(uid)
+                    async with UserLevel(uid) as userinfo:
+                        async with DailyNumberLimiter(uid, self.func_name, self.max_free) as nlmt:
+                            if self.max_free:
+                                if self.cost and not await nlmt.check():
+                                    await userinfo.turnover(-self.cost)
+                            elif self.cost:
+                                await userinfo.turnover(-self.cost)
+                            await nlmt.increase()
 
-                    nlmt = DailyNumberLimiter(uid, self.func_name, self.max_free)
-                    if self.max_free:
-                        if self.cost and not nlmt.check(close_conn=False):
-                            userinfo.turnover(-self.cost)
-                    elif self.cost:
-                        userinfo.turnover(-self.cost)
-                    nlmt.increase()
-
-                    cd = cd_step(userinfo.level, self.cd_rel) if not self.cd_c else self.cd_rel
-                    FreqLimiter(uid, self.func_name).start_cd(cd)
+                        cd = cd_step(userinfo.level, self.cd_rel) if not self.cd_c else self.cd_rel
+                        FreqLimiter(uid, self.func_name).start_cd(cd)
                 
             return wrapper
         return deco
