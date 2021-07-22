@@ -149,7 +149,7 @@ async def talk(bot: Bot, event: MessageEvent, state: T_State):
     if reply.startswith('呵呵'):  # 替掉开头的呵呵
         reply = reply.replace('呵呵', '呼呼')
     # 一些应该过滤替换的词语
-    if reply == '你好， 我是腾讯小龙女，请把你的问题告诉我吧':
+    if reply.endswith(('我是腾讯小龙女，请把你的问题告诉我吧')):
         reply = 'どうも～'
     elif reply == '本人行不更名坐不改姓小龙女是也，这个名字很不错吧' or reply == '巴啦啦能量~变身~你专属的可爱小仙女小龙女':
         reply = '我是守矢神社的风祝，东风谷早苗！'
