@@ -32,7 +32,7 @@ def store_talk(bot: Bot, event:GroupMessageEvent, state: T_State):
     # 消息不一致，重置存储
     if event.group_id not in cur_msg or event.raw_message != cur_msg[event.group_id]['message']:
         cur_msg[event.group_id] = {'message': event.raw_message, 'times': 0, 'uid_ls': {event.user_id}}
-        logger.debug(f'{str(cur_msg)}')
+        # logger.debug(f'{str(cur_msg)}')
         return False
 
     gr = cur_msg[event.group_id]

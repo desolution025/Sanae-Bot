@@ -3,7 +3,7 @@ from datetime import datetime
 import ujson as json
 from src.common import logger
 from src.common.dbpool import QbotDB
-from .mine import Mine
+from typing import Type as Mine
 
 
 Miners_List = set()
@@ -17,7 +17,9 @@ async def refresh_miners_list() -> Optional[int]:
     """
     async with QbotDB() as qb:
         result = await qb.queryall("SELECT `uid` FROM miners")
+    global Miners_List
     Miners_List = set([r.uid for r in result])
+    logger.success(f'连接数据库，读取到 {len(Miners_List)} 条矿工')
     if len(result) != len(Miners_List):
         dp_count = len(result) - len(Miners_List)
         logger.warning(f'There is {dp_count} duplicate data(s) in miners!!')
@@ -27,8 +29,12 @@ async def refresh_miners_list() -> Optional[int]:
 
 def miner_exists(uid: int) -> bool:
     """查询矿工记录是否存在"""
+    logger.debug(str(Miners_List))
     return uid in Miners_List
 
+def add_miner(uid: int):
+    Miners_List.add(uid)
+    logger.info(f'Insert a new miner: {uid}')
 
 async def refresh_mining():
     pass
@@ -84,6 +90,7 @@ async def dev_mine(mine: Mine):
             await qb.insert("""INSERT INTO miners
                             (uid, mine_number, deepest_keep, shallowest_collapse, collapse_number, dev_number, max_income, min_income, break_even, achievement)
                             VALUES (%s, 0, NULL, NULL, 0, 1, 0, 0, 0, '');""", (mine.owner,))
+            add_miner(mine.owner)
 
 
 async def update_mine(mine: Mine, *, stability=False, breadth=False, oof_prob=False, card_prob=False, item_prob=False,
@@ -108,12 +115,20 @@ async def update_mine(mine: Mine, *, stability=False, breadth=False, oof_prob=Fa
     async with QbotDB() as qb:
         # 更新矿洞信息
         updable = ['stability', 'breadth', 'oof_prob', 'card_prob', 'item_prob', 'fee', 'depth', 'coll_prob', 'income', 'distributions', 'status']
-        to_up = [f'{updable[i]}={mine.p if i < 9 else json.dumps(mine.p)}' for i, p in enumerate(
-                [stability, breadth, oof_prob, card_prob, item_prob, fee, depth, coll_prob, income, distributions, status]
-                ) if p is True]
+        # to_up = [f'{updable[i]}={getattr(mine, updable[i]) if i < 9 else json.dumps(getattr(mine, updable[i]))}' for i, p in enumerate(
+        #         [stability, breadth, oof_prob, card_prob, item_prob, fee, depth, coll_prob, income, distributions, status]
+        #         ) if p is True]
+        to_up = []
+        params = []
+        for i, p in enumerate([stability, breadth, oof_prob, card_prob, item_prob, fee, depth, coll_prob, income, distributions, status]):
+            if p:
+                to_up.append(f'{updable[i]}=%s')
+                pram = getattr(mine, updable[i]) if i < 9 else json.dumps(getattr(mine, updable[i]))
+                params.append(pram)
+        params.append(mine.number)
         logger.debug(f'update mine attrs: {to_up}')
         if to_up:
-            await qb.update("UPDATE mine SET {} WHERE `mid`=%s".format(', '.join(to_up)), (mine.number,))
+            await qb.update("UPDATE mine SET {} WHERE `mid`=%s".format(', '.join(to_up)), tuple(params))
 
 
 async def update_miner(mine: Mine, uid: int, cooling: int, toll: int, items: List[int], income: int, reward: List[str], status: Optional[List[Dict]]=None):
@@ -127,7 +142,8 @@ async def update_miner(mine: Mine, uid: int, cooling: int, toll: int, items: Lis
         else:
             await qb.insert("""INSERT INTO miners
                             (uid, mine_number, deepest_keep, shallowest_collapse, collapse_number, dev_number, max_income, min_income, break_even, achievement, status)
-                            VALUES (%s, 1, %s, NULL, 0, 0, 0, 0, 0, '', %s);""", (uid, mine.depth), json.dumps(status))
+                            VALUES (%s, 1, %s, NULL, 0, 0, 0, 0, 0, '', %s);""", (uid, mine.depth, json.dumps(status)))
+            add_miner(uid)
 
         # 更新矿工活动记录
         # exits = await qb.queryone("SELECT 1 FROM mining_miners WHERE `mid`=%s and uid=%s LIMIT 1;", (mine.number, uid))
@@ -144,7 +160,7 @@ async def update_miner(mine: Mine, uid: int, cooling: int, toll: int, items: Lis
 
         # 更新矿洞入场记录
         await qb.insert("INSERT INTO mining_sheet (`mid`, uid, admission, cooling, toll, items, income, reward) VALUES (%s, %s, NOW(), %s, %s, %s, %s, %s)",
-                        (uid, mine.number, cooling, toll, json.dumps(items), income, json.dumps(reward)))
+                        (mine.number, uid, cooling, toll, json.dumps(items), income, json.dumps(reward)))
 
 
 async def mine_collapse(mine: Mine, vimtim: int):

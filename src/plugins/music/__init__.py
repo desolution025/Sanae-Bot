@@ -5,7 +5,7 @@ from nonebot import on_command
 from nonebot_adapter_gocq.exception import ActionFailed
 
 from src.common.rules import sv_sw
-from src.common.levelsystem import UserLevel, FuncLimiter
+from src.common.levelsystem import FuncLimiter
 from src.common import logger, Bot, MessageEvent, T_State, MessageSegment, CANCEL_EXPRESSION
 from src.utils import PagingBar, reply_header
 from .netease import search_163
@@ -102,11 +102,11 @@ music = on_command('点歌',
                             '咪咕', '搜咪咕', '咪咕点歌', '咪咕搜歌'},
                     rule=sv_sw(plugin_name, plugin_usage)&filter_noarg,
                     priority=2)
-limiter = FuncLimiter('点歌', cd_rel=120, max_free=2, cost=3)
+limiter = FuncLimiter('点歌', cd_rel=120)
 
 
 @music.handle()
-@limiter.limit_verify(cding='稍等一下，音乐冷却还剩{left_time}秒', overdraft='资金不够啦，点歌台也是要电费的哟')
+@limiter.limit_verify(cding='稍等一下，音乐冷却还剩{left_time}秒')
 async def recieve_cmd(bot: Bot, event: MessageEvent, state: T_State):
     state['trigger'] = event.raw_message # 检测搜索的指定音乐源还是混合列表
     kwd = event.message.extract_plain_text().strip()

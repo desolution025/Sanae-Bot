@@ -9,6 +9,7 @@ import hmac
 
 import httpx
 from imghdr import what
+from nonebot.exception import FinishedException
 from nonebot_adapter_gocq.event import MessageEvent
 from nonebot_adapter_gocq.message import MessageSegment
 
@@ -68,11 +69,8 @@ def map_rate(num: Union[int, float], from_min: Union[int, float], from_max: Unio
 
 def get_name(event: MessageEvent) -> str:
     """获得sender的名称，昵称优先度为群昵称>qq昵称>qq号"""
-    name = event.sender.card if event.message_type == 'group' else event.sender.nickname
-    if not name.strip():
-        name = event.get_user_id()
-    return name
-
+    return event.sender.card or event.sender.nickname or event.get_user_id()
+    
 
 async def save_img(url: str, filepath: Union[str, Path]):
     '''
@@ -250,7 +248,7 @@ class DailyNumberLimiter:
                 (self.uid,)
                 )
         await self.conn.commit()
-        await self.last_call, self.count, self.total = date.today(), 0, 0
+        self.last_call, self.count, self.total = date.today(), 0, 0
 
     async def load_user_data(self):
         """读取用户记录，未注册会调用创建方法自动添加记录"""
@@ -302,7 +300,7 @@ class DailyNumberLimiter:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         if exc_type is None:
             await self.close()
-        else:
+        elif not isinstance(exc_type, FinishedException):
             logger.error(f'EXCType: {exc_type}; EXCValue: {exc_val}; EXCTraceback: {exc_tb}')
 
 

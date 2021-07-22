@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Tuple, Optional, Union, Sequence
 
 from src.common.levelsystem import UserLevel
-from src.utils import cgauss
+from src.utils import cgauss, map_rate
 from .orb import *
 
 
@@ -89,6 +89,19 @@ class Mine:
             if self.number not in Mines_Collection:
                 Mines_Collection[self.number] = self
                 break
+
+    @staticmethod
+    def get_mine(mid: int):
+        """如果有矿洞可开发返回矿洞实例，否则返回None"""
+        if mid in Mines_Collection:
+            return Mines_Collection[mid]
+        else:
+            return None
+
+    @staticmethod
+    def get_all_mines():
+        """返回当前正在开发的所有矿洞列表"""
+        return Mines_Collection
 
     async def store_mine(self):
         """将自己存入数据库进行持久化"""
@@ -196,7 +209,8 @@ class Mine:
         toll = self.fee  # 收取的费用
         if toll:
             self.income += self.fee
-            UserLevel(uid).turnover(-toll)
+            async with UserLevel(uid) as miner:
+                await miner.turnover(-toll)
         
         # 增加一条新的挖矿记录
         self.sheet.append(
@@ -255,11 +269,6 @@ class Mine:
         await mine_collapse(self, vimtim)
 
 
-def all_mines():
-    """返回当前正在开采的所有矿场"""
-    return Mines_Collection
-
-
 def mining_count(uid: int) -> int:
     """查询用户当前正在开发的矿场数量"""
     count = 0
@@ -277,7 +286,6 @@ def upper_limit(level: int) -> int:
     if not level:
         return 0
     return (level - 1) // 2
-
 
 
 def mining_list():
@@ -299,21 +307,3 @@ def mining_list():
         unit_info.append(info)
     
     return '\n——————————\n'.join(unit_info)
-
-
-
-# 以下函数以后加到公共模块里面
-from nonebot_adapter_gocq.event import MessageEvent
-
-
-def map_rate(num: Union[int, float], from_min: Union[int, float], from_max: Union[int, float], to_min: Union[int, float], to_max: Union[int, float]):
-    """区间映射"""
-    return to_min + ((to_max - to_min) / (from_max - from_min)) * (num - from_min)
-
-
-def get_name(event: MessageEvent) -> str:
-    """获得sender的名称，昵称优先度为群昵称>qq昵称>qq号"""
-    name = event.sender.card if event.message_type == 'group' else event.sender.nickname
-    if not name.strip():
-        name = event.get_user_id()
-    return name
