@@ -10,8 +10,8 @@ from src.common import Bot, MessageEvent, MessageSegment, T_State, CANCEL_EXPRES
 from src.common.log import logger
 from src.common.rules import full_match, sv_sw
 from src.common.levelsystem import UserLevel
+from .orb import refresh_miners_list, refresh_mining
 from .mine import *
-from .orb import refresh_miners_list
 from src.utils import reply_header, get_name
 
 
@@ -26,6 +26,7 @@ driver=get_driver()
 @driver.on_startup
 async def read_mine_db():
     await refresh_miners_list()
+    await refresh_mining()
 
 #—————————————————————————————————————————————#
 
@@ -51,7 +52,7 @@ async def can_start(bot: Bot, event: MessageEvent, state: T_State):
         if user.fund < 200:
             await open_mine.finish(reply('开发矿场最少需要200的启动资金，金额充足时再成为矿场主吧~'))
         # 开发矿场数量超出限制
-        if mc := mining_count(uid) >= upper_limit(user.fund):
+        if mc := mining_count(uid) >= upper_limit(user.level):
             await open_mine.finish(reply(f'您当前已同时运作{mc}个矿场，提升等级可以增加同时运作矿场的数量哟~'))
         
         # 条件满足，询问投资数据
@@ -195,11 +196,11 @@ async def mining_work(bot: Bot, event: MessageEvent, state: T_State):
     use_cards = state['cards'] if 'cards' in state and state['cards'] is not None else []
     logger.debug(f'对{target.number}号矿洞使用符卡:{use_cards}')
     
-    update, rewards = await target.mine(uid=event.user_id, cards=use_cards)
+    op = await target.dig(uid=event.user_id, cards=use_cards)
     name = get_name(event)
-    if update is not None:
-        oof, cards, items = rewards
-        if all(map(lambda x: not bool(x), rewards)):
+    if not op['influence']['collapse']:
+        oof, cards, items = op['income'], op['reward']['cards'], op['reward']['items']
+        if all(map(lambda x: not bool(x), [oof, cards, items])):
             msg = '很遗憾没有挖到任何物品~'
         else:
             msg = '啊，开采到了什么!'
@@ -213,13 +214,10 @@ async def mining_work(bot: Bot, event: MessageEvent, state: T_State):
         await asleep(2)
 
         # 报告矿洞状态更新 TODO: 重大事件报告矿场主
-        msg = f'{target.number}号深度增加到{target.depth}，由于{name}的采掘，'
+        msg = f'{target.number}号深度增加到{target.depth}，'
 
-        coll_up, fee_up, breadth_change = update
-
-        if coll_up:
-            msg += f'矿洞的坍塌率上升{coll_up}，'
-        if breadth_change:
+        if 'breadth' in op['influence']:
+            breadth_change = op['influence']['breadth']
             if breadth_change == 1:
                 msg += '挖掘到了宽松地带，矿洞宽度+1'
             elif breadth_change == -1:
@@ -230,7 +228,7 @@ async def mining_work(bot: Bot, event: MessageEvent, state: T_State):
         await conduct_mining.send(f'{name}挖塌了{target.number}号矿洞！')
         await asleep(1.5)
         msg = f'''你的{target.number}号矿洞在深度为{target.depth}处遭遇坍塌，已关闭该矿洞的运营！
-至坍塌为止，该矿洞一共被{len(target.miners)}名矿工采掘过，共创造了{target.income}的收入\n'''
+至坍塌为止，共创造了{target.income}的收入\n'''  #TODO: 提取步骤记录给信息
         profit = target.income - target.start_up_capital
         if profit > 0:
             msg += f'此次运营你的净利润为{profit}金币，赠送你一张#4c88fda2符卡作为盈利的贺礼'

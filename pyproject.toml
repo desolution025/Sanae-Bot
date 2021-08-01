@@ -21,6 +21,7 @@ toml = "^0.10.2"
 nonebot-plugin-apscheduler = "^0.1.2"
 aiomysql = "^0.0.21"
 aiofiles = "^0.7.0"
+opencv-python = "^4.5.3"
 
 [tool.poetry.dev-dependencies]
 

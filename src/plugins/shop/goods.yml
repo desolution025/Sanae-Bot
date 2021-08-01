@@ -1,0 +1,13 @@
+all:
+  - type: fishing-rod
+    name: 低级钓竿
+    length: 1.2
+    hardness: 50
+    durability: 15
+    price: 10
+  
+  - type: mining-tool
+    name: 低级矿镐
+    strength: 10
+    durability: 10
+    price: 10

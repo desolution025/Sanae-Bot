@@ -63,6 +63,7 @@ class MysqlPool:
     async def get_conn(self):
         if self.__class__._pool is None:
             self.__class__._pool = await aiomysql.create_pool(**self.dbinfo)
+            logger.success('Created connected pool!')
         self._conn : aiomysql.Connection = await self.__class__._pool.acquire()
         self._cursor : aiomysql.DictCursor = await self._conn.cursor(AttrDictCursor)
         return self
@@ -123,6 +124,15 @@ class MysqlPool:
             self.__class__._pool.release(self._conn)
         except PymysqlError as err:
             logger.exception(err)
+    
+    @classmethod
+    async def close_pool(cls):
+        if cls._pool is not None:
+            cls._pool.close()
+            await cls._pool.wait_closed()
+            logger.info('Close mysql connection pool!')
+        else:
+            logger.info('Did not created mysql connection pool, skip closing!')
 
     async def __aenter__(self):
         await self.get_conn()
@@ -161,12 +171,13 @@ if __name__ == "__main__":
     async def tst():
         async with QbotDB() as qb:
             result = await qb.queryall("select * from userinfo limit 5")
+            # result = await qb.queryone("SELECT LAST_INSERT_ID();")
         print(type(result))
         print(result)
-        for r in result:
-            print(type(r))
-            if isinstance(r, AttrDict):
-                print(r.qq_number)
+        # for r in result:
+        #     print(type(r))
+        #     if isinstance(r, AttrDict):
+        #         print(r.qq_number)
     
     loop = asyncio.get_event_loop()
     loop.run_until_complete(tst())

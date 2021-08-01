@@ -1,5 +1,6 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict
+import ujson as json
 from functools import wraps
 from inspect import signature
 
@@ -49,29 +50,32 @@ class UserLevel:
     fund (int): 用户资金
     last_sign (datetime.datetime): 上次签到时间
     total_sign (int): 总签到次数
+    achievement (Dict[str: int]): 用户成就，特殊事件触发获得，结构为 成就名称：数量 
+    status (List[Dict]): 矿工buff，在使用符卡或占卜运势时会遇到buff
     """
 
-    user_ls = None
+    user_ls = {}  # 所有用户实例
 
-    def __init__(self, uid: int, level: int=0, exp: int=0, fund: int=0) -> None:
-        """不存在记录时会自动创建数据
+    def __new__(cls, uid: int):
+        """用户已被实例化过会返回用户列表中的实例而不会重新创建"""
+        if uid in cls.user_ls:
+            return cls.user_ls[uid]
+        else:
+            return super().__new__(cls)
 
-        Args:
-            uid (int): 用户ID
-            level (int, optional): 用户等级. Defaults to 0.
-            exp (int, optional): 用户经验值. Defaults to 0.
-            fund (int, optional): 用户资金. Defaults to 0.
-        """
-        assert self.__class__.user_ls is not None, '用户等级系统未初始化！！'
-
-        self.uid = uid
-        self.loaded = False  # 是否已经读取了用户数据
+    def __init__(self, uid: int) -> None:
+        """未创建过用户时实例化一个新用户"""
+        if uid not in self.__class__.user_ls:
+            self.uid = uid
+            self.loaded = False  # 是否已经读取了用户数据
     
     @classmethod
     async def load_users_data(cls):
         async with QbotDB() as qb:
-            result = await qb.queryall('SELECT qq_number FROM userinfo')
-        cls.user_ls = [user.qq_number for user in result]
+            result = await qb.queryall('SELECT qq_number, achievement, `status` FROM userinfo')
+        # cls.user_ls = [user.qq_number for user in result]  # 之前是只存用户数据id的
+        for r in result:
+            cls.user_ls[r.qq_number] = UserLevel(r.qq_number)
         logger.success(f'连接数据库，读取到 {len(cls.user_ls)} 条用户')
         if len(set(cls.user_ls)) != len(result):
             logger.warning("There are duplicate record(s) in table: userinfo !!")
@@ -88,14 +92,14 @@ class UserLevel:
         self.fund = 0
         self.last_sign = datetime.strptime('2020-10-05 12:22:00','%Y-%m-%d %H:%M:%S')
         self.total_sign = 0
-        self.__class__.user_ls.append(self.uid)  # 用户列表加入该用户
+        self.__class__.user_ls[self.uid] = self  # 用户列表加入该用户
         logger.info(f'注册一个新用户：{self.uid}')
 
     async def load_user(self):
         if self.uid in self.__class__.user_ls:
             async with QbotDB() as qb:
                 info = await qb.queryone(
-                                    'select `level`, `exp`, fund, last_sign, total_sign from userinfo where qq_number=%s',
+                                    'select `level`, `exp`, fund, last_sign, total_sign from userinfo, achievement, `status`, spell_cards where qq_number=%s',
                                     (self.uid,)
                                     )
             self.level = info.level
@@ -103,6 +107,15 @@ class UserLevel:
             self.fund = info.fund
             self.last_sign = info.last_sign # 上次签到时间
             self.total_sign = info.total_sign
+            self.achievement = json.loads(info.achievement)
+            self.status = json.loads(info.status)
+            if info.spell_cards is None:
+                self.spell_cards = None
+            else:  # 读取拥有符卡时候要把string键值改为int键值
+                strk = json.loads(info.spell_cards)
+                self.spell_cards = {}
+                for k in strk:
+                    self.spell_cards[int(k)] = strk[k]
         else:
             await self.create_user()
         self.loaded = True
@@ -235,13 +248,56 @@ class UserLevel:
 
         return self.fund, overdraft
 
+    async def status_change(self):
+        """用户buff变更"""
+        async with QbotDB() as qb:
+            await qb.update("UPDATE userinfo SET status=%s WHERE uid=%s;", (json.dumps(self.status), self.uid))
+        logger.debug(f'User {self.uid} status changed')
+
+    async def got_acv(self, acv_name: str):
+        """用户获得成就"""
+        async with QbotDB() as qb:
+            if self.achievement is None:
+                self.achievement = {}
+            if acv_name not in self.achievement:
+                self.achievement[acv_name] = 1
+            else:
+                self.achievement[acv_name] += 1
+            await qb.update("UPDATE userinfo SET achievement=%s WHERE uid=%s;", (json.dumps(self.achievement), self.uid))
+            logger.info(f'User {self.uid} got an achievement: {acv_name}')
+
+    async def got_card(self, cards: Dict[int: int]):
+        """用户获得符卡
+        
+        Args:
+            cards (Dict[int: int]): 结构为[符卡编号：获得数量]形式的dict
+        """
+        async with QbotDB() as qb:
+            for k, v in cards.items():
+                if k in self.spell_cards:
+                    self.spell_cards[k] += v
+                else:
+                    self.spell_cards[k] = v
+            await qb.update("UPDATE userinfo SET spell_cards=%s WHERE qq_number=%s", (json.dumps(self.spell_cards), self.uid))
+            logger.debug(f'用户 {self.uid} 获得符卡： {cards}')
+
+    async def use_card(self, *cards: int):
+        """用户使用符卡"""
+        async with QbotDB() as qb:
+            for card in cards:
+                self.spell_cards[card] -= 1
+            await qb.update("UPDATE userinfo SET spell_cards=%s WHERE qq_number=%s", (json.dumps(self.spell_cards), self.uid))
+            logger.debug(f'用户 {self.uid} 使用了符卡： {cards}')
+
     async def __aenter__(self):
-        await self.load_user()
+        if not self.loaded:
+            await self.load_user()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         if exc_type and exc_type is not FinishedException:
             logger.error(f'EXCType: {exc_type}; EXCValue: {exc_val}; EXCTraceback: {exc_tb}')
+
 
 def is_user(uid: int) -> bool:
     """查询是否是使用过bot的用户"""
