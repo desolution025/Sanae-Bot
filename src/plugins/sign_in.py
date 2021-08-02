@@ -1,19 +1,11 @@
-from typing import Optional
 from datetime import datetime, date
 
-from nonebot import MatcherGroup, get_driver
+from nonebot import MatcherGroup
 
 from src.common import Bot, MessageEvent, T_State
 from src.utils import reply_header, cgauss
 from src.common.levelsystem import UserLevel, exp_step
 from src.common.dbpool import QbotDB
-
-
-driver = get_driver()
-
-@driver.on_startup
-async def read_users_data():
-    await UserLevel.load_users_data()
 
 
 # 一个进度条用来显示经验值进度

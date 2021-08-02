@@ -31,18 +31,21 @@ class BaseItem:
         type (str): 物品类型
         owner (int): 物品所属者
         name (str): 物品名字
+        description (Optional[str]): 物品描述
     """
     cls_type = 'baseitem'
 
-    def __init__(self, owner: int, name: str) -> None:
+    def __init__(self, owner: int, name: str, description: Optional[str]=None) -> None:
         """创建物品，创建完需要使用store方法来给用户绑定
 
         Args:
             owner (int): 物品所属者id
             name (str): 物品名字
+            description (Optional[str]): 物品描述.Default is None.
         """
         self.owner = owner
         self.name = name
+        self.description = description 
 
 
 class BaseTool(BaseItem):
@@ -87,6 +90,13 @@ class BaseTool(BaseItem):
             await qb.update('UPDATE items SET `name`=%s WHERE `ID`=%s;', (name, self.id))
             logger.info(f'用户 {self.owner} 将物品 {self.id} 重命名为 {name}')
     
+    async def add_descipition(self, description: str):
+        """添加或修改物品的描述"""
+        self.description = description
+        async with QbotDB() as qb:
+            await qb.update('UPDATE items SET `description`=%s WHERE `ID`=%s;', (description, self.id))
+            logger.info(f'用户 {self.owner} 将物品 {self.id} 描述更改为 {description}')
+
     def _format_status(self):
         """子类物品的专属属性要单独处理到status中再序列化到数据库"""
         if self.__charcteristic:
