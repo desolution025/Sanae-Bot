@@ -298,9 +298,6 @@ class Hydrobios(CollectionItem):
     """
     cls_type = 'hydrobios'
 
-    def __init__(self, owner: int, name: str) -> None:
-        super().__init__(owner, name)
-
 
 class Fish(Hydrobios):
     """
@@ -310,9 +307,6 @@ class Fish(Hydrobios):
     """
     cls_type = 'fish'
 
-    def __init__(self, owner: int, name: str) -> None:
-        super().__init__(owner, name)
-
 
 class SpellCard(CollectionItem):
     """
@@ -321,9 +315,6 @@ class SpellCard(CollectionItem):
     可能具有合成方法、附魔方法
     """
     cls_type = 'spell-card'
-
-    def __init__(self, owner: int, name: str) -> None:
-        super().__init__(owner, name)
 
 
 class FishingRod(WearTool):
