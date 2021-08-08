@@ -1,6 +1,8 @@
 from typing import Dict, Optional
+from pathlib import Path
 import ujson as json
 
+import yaml
 from ..dbpool import QbotDB
 from ..log import logger
 from .status_list import *
@@ -400,3 +402,16 @@ async def refresh_items_list():
                 Collections_Store[r.owner] = {}
             Collections_Store[r.owner][r.name] = r.num
         logger.success(f'读取到{len(result)}条收藏类物品记录')
+
+
+#───────────────物品中英文映射───────────────#
+
+
+mapping_file = Path(__file__).parent/'uz_mapping.yml'
+
+def load_uz_mapping():
+    global uz_mapping
+    with mapping_file.open(encoding='utf-8') as f:
+        uz_mapping = yaml.load(f)
+
+load_uz_mapping()

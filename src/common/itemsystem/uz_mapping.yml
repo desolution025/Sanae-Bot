@@ -1,0 +1,18 @@
+type:
+  wear-tool: 磨损型工具
+  non-wear-tool: 非磨损型工具
+  collection: 收藏品
+  hydrobios: 水生生物
+  fish: 鱼类
+  spell-card: 符卡
+  fishing-rod: 鱼竿
+  mining-tool: 采矿工具
+
+property:
+  durability: 耐久
+  max_drb: 最大耐久
+  length: 长度
+  hardness: 硬度
+  strength: 强度
+
+status:

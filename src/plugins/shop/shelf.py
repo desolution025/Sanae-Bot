@@ -1,63 +1,190 @@
+from datetime import datetime
 from pathlib import Path
+from typing import Dict
+
 import yaml
 import numpy as np
 import cv2
 from PIL import Image, ImageDraw, ImageFont
 try:
-    from src.common.log import logger
     from src.common import RESPATH
+    from src.common.log import logger
+    from src.common.levelsystem import UserLevel
+    from src.common.itemsystem import cls_map, uz_mapping, WearTool
+    from src.utils.imghandler import draw_emoji_text, draw_text_shadow
+
 except ImportError:
     from loguru import logger
-    RESPATH = r"E:\Develop\QQbot\resource\ui"
+    RESPATH = r"E:\Develop\QQbot\resource"
+    from tmptst import draw_emoji_text, draw_text_shadow
 
 
 font_folder = Path(RESPATH)/'fonts'
-shop_ui_folder = Path(RESPATH)/'shop'
+shop_ui_folder = Path(RESPATH)/'ui'/'shop'
 
 # 用户信息头
-header_user_reader = cv2.imread(str(shop_ui_folder/'shop_header_user.png'))
+header_user_reader = cv2.imread(str(shop_ui_folder/'shop_header_user.png'), cv2.IMREAD_UNCHANGED)
 header_user_base = Image.fromarray(cv2.cvtColor(header_user_reader, cv2.COLOR_BGRA2RGBA))
+header_user_shape = header_user_reader.shape
 del header_user_reader
 
 # 日期头，日期信息不在此ui上覆盖，在下面附加
-header_date_reader = cv2.imread(str(shop_ui_folder/'shop_header_date.png'))
+header_date_reader = cv2.imread(str(shop_ui_folder/'shop_header_date.png'), cv2.IMREAD_UNCHANGED)
 header_date = Image.fromarray(cv2.cvtColor(header_date_reader, cv2.COLOR_BGRA2RGBA))
+header_date_shape = header_date_reader.shape
 del header_date_reader
 
 # 工具类信息底板
-shelf_tool_reader = cv2.imread(str(shop_ui_folder/'shelf_tool.png'))
+shelf_tool_reader = cv2.imread(str(shop_ui_folder/'shelf_tool.png'), cv2.IMREAD_UNCHANGED)
 shelf_tool_base = Image.fromarray(cv2.cvtColor(shelf_tool_reader, cv2.COLOR_BGRA2RGBA))
 del shelf_tool_reader
 
 # 符卡类信息底板
-shelf_sc_reader = cv2.imread(str(shop_ui_folder/'shelf_sc.png'))
+shelf_sc_reader = cv2.imread(str(shop_ui_folder/'shelf_sc.png'), cv2.IMREAD_UNCHANGED)
 shelf_sc_base = Image.fromarray(cv2.cvtColor(shelf_sc_reader, cv2.COLOR_BGRA2RGBA))
 del shelf_sc_reader
 
 # 其它收藏品底板
-shelf_other_reader = cv2.imread(str(shop_ui_folder/'shelf_other.png'))
+shelf_other_reader = cv2.imread(str(shop_ui_folder/'shelf_other.png'), cv2.IMREAD_UNCHANGED)
 shelf_other_base = Image.fromarray(cv2.cvtColor(shelf_other_reader, cv2.COLOR_BGRA2RGBA))
 del shelf_other_reader
 
 
+name_fnt = ImageFont.truetype(str(font_folder/'经典粗圆简.TTF'), 22)  # 用户名称、商品名称字体
+level_fnt = ImageFont.truetype(str(font_folder/'MSYHBD.TTC'), 24)  # 用户等级字体
+fund_fnt = ImageFont.truetype(str(font_folder/'GenJyuuGothic-Bold.ttf'), 17)  # 用户资金字体
+date_fnt = ImageFont.truetype(str(font_folder/'GenJyuuGothic-Heavy.ttf'), 20)  # 日期字体
+index_fnt = ImageFont.truetype(str(font_folder/'UDDigiKyokashoN-B.ttc'), 24)  # 商品索引字体
+flag_fnt = ImageFont.truetype(str(font_folder/'经典粗圆简.TTF'), 21)  # 商品标签字体，商品类型、商品售价的标签
+ppt_flag_fnt = ImageFont.truetype(str(font_folder/'经典粗圆简.TTF'), 15)  # 商品属性标签字体，属性、附魔、说明的标签
+price_fnt = ImageFont.truetype(str(font_folder/'GenJyuuGothic-Medium.ttf'), 21)  # 商品售价数字字体
+property_fnt = ImageFont.truetype(str(font_folder/'经典粗圆简.TTF'), 16)  # 商品属性字体，属性、附魔
+value_fnt = ImageFont.truetype(str(font_folder/'UDDigiKyokashoN-B.ttc'), 16)  # 商品属性值字体
+description_fnt = ImageFont.truetype(str(font_folder/'经典粗圆简.TTF'), 13)  # 商品描述正文字体
+
+
 goods_file = Path(__file__).parent/'goods.yml'
 with goods_file.open(encoding='utf-8') as f:
+    yaml.warnings({'YAMLLoadWarning': False})
     goods = yaml.load(f)
 
 
-def shop_interface(*items):
-    index_fnt = ImageFont.truetype(r"E:\Develop\QQbot\resource\fonts\MSYH.TTC", 24)
-    txt_fnt = ImageFont.truetype(r"E:\Develop\QQbot\resource\fonts\MSYH.TTC", 12)
-    # display = shop_base.copy()
-    # draw = ImageDraw.Draw(display)
+def shop_interface(*items, **kw):
+    # 根据商品数量确定页面大小
+    count = len(items)
+    if count < 8:
+        resolution = (100 + count * 230, 640, 3)
+    else:
+        resolution = (100 + count // 2 * 230, 1200, 3)
+
+    bg = np.zeros(resolution, dtype=np.uint8)  # 临时BG
+    bg[:] = (150, 100, 90)
+    bg = Image.fromarray(cv2.cvtColor(bg, cv2.COLOR_BGR2RGBA), mode='RGBA')
+
+    # header-userinfo
+    user = kw['user']
+    name_fnt_params = {
+        'font': name_fnt,
+        'fill': '#FFFFFF',
+        'stroke_width': 1,
+        'stroke_fill': '#111111'
+    }
+    # header_user = draw_emoji_text(header_user_base, kw['name'], emoji_size=22, positon=(76, 25), text_shadow=True, opacity=0.3, **name_fnt_params)
+    header_user = header_user_base.copy()
+    user_draw = ImageDraw.Draw(header_user)
+    user_draw.text((33, 46), text=str(user.level), fill='#1E3643', font=level_fnt, anchor='ms', align='center')
+    fund_text_params = {
+        'xy': (120, 56),
+        'text': str(user.fund),
+        'font': fund_fnt,
+        'fill': '#FFFFFF',
+        'anchor': 'ms',
+        'stroke_width': 1,
+        'stroke_fill': '#111111'
+    }
+    draw_text_shadow(header_user, opacity=0.3, **fund_text_params)
+    user_draw.text(**fund_text_params)
     
-    # draw.text((92, 159), '01', font=index_fnt, anchor='mm', fill=(28, 123, 177))
-    # draw.text((239, 196), '超人「大追踪！Buddhist Rider」\n（大追踪！僧侣骑士）', font=txt_fnt, anchor='mm', align='center', fill=(10, 10, 10))
+    # header-date
+    now = datetime.now()
+    meridiem = 'AM' if now.hour < 12 else 'PM'
+    timestr = now.strftime('%Y-%m-%d ') + meridiem
+    logger.debug(f'current store time: {timestr}')
+
+    # main composition
+    if count < 8:
+        user_coord = (14, 16)
+        date_coord = (435, 22)
+    else:
+        user_coord = (28, 16)
+        date_coord = (992, 22)
+    
+    bg.alpha_composite(header_user, user_coord)
+    bg.alpha_composite(header_date, date_coord)
+    bgdraw = ImageDraw.Draw(bg)
+    date_text_params = {
+        'xy': (date_coord[0] + 101, date_coord[1] + 58),
+        'text': timestr,
+        'font': date_fnt,
+        'fill': '#000000cc',
+        'anchor': 'ms',
+        'align': 'center',
+        'stroke_width': 1,
+        'stroke_fill': '#FFFFFF'
+    }
+    draw_emoji_text(bg, kw['name'], emoji_size=22, positon=(user_coord[0] + 72, user_coord[1] + 23),
+                    text_shadow=True, opacity=0.3, gen_new_img=False, **name_fnt_params)
+    draw_text_shadow(bg, distance=4, **date_text_params)
+    bgdraw.text(**date_text_params)
+
+    return bg
 
 
-    # return display
-
+def commodity_card(index: int, commodity: Dict):
+    item_type = cls_map[commodity['type']]
+    if isinstance(item_type, WearTool):
+        card = shelf_tool_base.copy()
+        draw = ImageDraw.Draw(card)
+        # index
+        draw.text(xy=(69, 52), text=str(index).zfill(2), fill='#FFFFFF', font=index_fnt, anchor='ms', align='center', stroke_width=1, stroke_fill='#111111')
+        # name
+        draw.text(xy=(294, 49), text=commodity['name'], fill='#EFEFEF', font=name_fnt, anchor='ms', align='center', stroke_width=1, stroke_fill='#111111')
+        # type
+        draw.text(xy=(190, 90), text=uz_mapping['type'][commodity['type']], fill='#2E4351', font=property_fnt, anchor='ms', align='center')
+        # price
+        draw.text(xy=(394, 92), text=commodity['price'], fill='#2A3335', font=price_fnt, anchor='ms', align='center')
+        # properties
+        item_type : WearTool = cls_map[commodity['type']]
+        ppt_ls = item_type.__charcteristic.copy()  # 属性英文名列表
+        ppt_ls.remove('max_drb')  # 去掉最大耐久度属性
+        ppt_zh_ls = [uz_mapping['property'][p] for p in ppt_ls]  # 属性中文名列表
+        ppt_name = '\n'.join(ppt_zh_ls)
+        draw.multiline_text(xy=(44, 164), text=ppt_name, fill='#1F1F1F', font=property_fnt, anchor='lm', align='left')
+        values = '\n'.join([str(commodity[p]) for p in ppt_ls])
+        draw.multiline_text(xy=(112, 164), text=values, fill='#1F1F1F', font=value_fnt, anchor='rm', align='right')
+        # status
+        status = commodity['status']
+        if status is None:
+            draw.text(xy=(216, 168), text='无', fill='#1F1F1F', font=property_fnt, anchor='ms', align='center')
+        else:
+            status_name = '\n'.join([uz_mapping['status'][p] for p in status])
+            draw.multiline_text(xy=(157, 164), text=ppt_name, fill='#1F1F1F', font=property_fnt, anchor='lm', align='left')
+            values = '\n'.join([str(status[k]) for k in status])
+            draw.multiline_text(xy=(267, 164), text=values, fill='#2E3941', font=value_fnt, anchor='rm', align='right')
+        # description
 
 
 if __name__ == "__main__":
-    shop_interface().show()
+    class A():
+        def __init__(self) -> None:
+            pass
+
+    user = A()
+    user.level = 25
+    user.fund = 13500
+    try:
+        name = '绝对有解'
+        # name = 'wdnmd🔷😄😝👌🥓wtd🥗🧀草🍣发动a✝🛐♏♒♊'
+        shop_interface(user=user, name=name).show()
+    except Exception as e:
+        logger.exception(e)
