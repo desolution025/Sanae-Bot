@@ -8,7 +8,7 @@ import ujson as json
 
 import numpy as np
 import cv2
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 from emoji import emoji_lis
 from imghdr import what
 
@@ -301,9 +301,37 @@ def draw_text_shadow(img: Optional[Image.Image]=None,
         img.alpha_composite(shadow)
 
 
+def text_box(text: str, width: int, font: ImageFont.FreeTypeFont):
+    """生成固定宽度的文字排版
+
+    Args:
+        text (str): 字符串
+        width (int): 宽度
+        font (ImageFont.FreeTypeFont): 字体
+
+    Returns:
+        str: 重排过的文字
+    """
+    accu = 0  # 字符积累长度
+    pre_pt = 0  # 之前的断点
+    seg = []  # 字符串被分割的片段
+
+    for i, c in enumerate(text):
+        l = font.getlength(c)  # 字符长度
+        if text[i] == '\n':  # 遇到回车直接重新积累长度
+            accu = 0
+        elif accu + l > width:  # 超过设定宽度时添加片段
+            seg.append(text[pre_pt: i])
+            accu = l
+            pre_pt = i
+        else:
+            accu += l
+
+    return ('\n'.join(seg) + '\n' + text[pre_pt:]).lstrip('\n')  # 连接所有片段
+
+
 if __name__ == "__main__":
     from datetime import datetime
-    from PIL import ImageFont
     RESPATH = r"E:\Develop\QQbot\resource"
     font_folder = Path(RESPATH)/'fonts'
     fnt_path = font_folder/'经典粗圆简.TTF'

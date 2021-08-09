@@ -6,7 +6,7 @@ all:
     hardness: 50
     durability: 15
     status: null
-    description: "较短的鱼竿，比较适合新手用来钓小鱼。\n但看起来不是很耐用呢"
+    description: "较短的鱼竿，适合新手用来钓小鱼。\n但看起来不是很耐用呢"
   
   - type: mining-tool
     name: 低级矿镐

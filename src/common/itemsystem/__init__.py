@@ -64,12 +64,12 @@ class BaseTool(BaseItem):
         status (List[Dict]): 物品状态、buff
     """
     cls_type = 'basetool'
+    _charcteristic = () # 特殊属性，对子类来说要定义特殊属性在序列化到数据库的时候将属性放到status中
 
     def __init__(self, owner: int, name: str) -> None:
         super().__init__(owner, name)
         self.id = None
         self.status = {}
-        self.__charcteristic = [] # 特殊属性，对子类来说要定义特殊属性在序列化到数据库的时候将属性放到status中
 
     async def store(self):
         """持久化存储物品，存储方式为单个实例为一条记录"""
@@ -101,10 +101,10 @@ class BaseTool(BaseItem):
 
     def _format_status(self):
         """子类物品的专属属性要单独处理到status中再序列化到数据库"""
-        if self.__charcteristic:
+        if self.__class__._charcteristic:
             status = self.status.copy()
             status['args'] = {}
-            for arg in self.__charcteristic:
+            for arg in self.__class__._charcteristic:
                 status['args'][arg] = getattr(self, arg)
             return status
         else:
@@ -112,8 +112,8 @@ class BaseTool(BaseItem):
 
     def _attrs_from_status(self):
         """读取数据库里的status属性，提取专属属性还原给实例，用于初始化时读取数据库记录"""
-        assert bool(self.__charcteristic) and 'args' in self.status, '不是将属性添加到status中的序列化的status，检查属性源'
-        if self.__charcteristic:
+        assert bool(self.__class__._charcteristic) and 'args' in self.status, '不是将属性添加到status中的序列化的status，检查属性源'
+        if self.__class__._charcteristic:
             for arg, value in self.status['args'].items():
                 setattr(self, arg, value)
             del self.status['arg']
@@ -186,12 +186,12 @@ class WearTool(BaseTool):
         max_drb (int): 最大耐久
     """
     cls_type = 'wear-tool'
+    _charcteristic = BaseTool._charcteristic + ('durability', 'max_drb')
 
     def __init__(self, owner: int, name: str, durability: int) -> None:
         super().__init__(owner, name)
         self.durability = durability
         self.max_drb = durability
-        self.__charcteristic.extend(['durability', 'max_drb'])
 
     async def use(self, wat :int=1):
         """
@@ -330,6 +330,7 @@ class FishingRod(WearTool):
         max_drb (int): 最大耐久
     """
     cls_type = 'fishing-rod'
+    _charcteristic = WearTool._charcteristic + ('length', 'hardness')
 
     def __init__(self, owner: int, name: str, durability: int,
                 length: int,
@@ -345,7 +346,6 @@ class FishingRod(WearTool):
         """
         super().__init__(owner, name, durability)
         self.length, self.hardness = length, hardness
-        self.__charcteristic.extend(['length', 'hardness'])
 
 
 class MiningTool(WearTool):
@@ -358,6 +358,7 @@ class MiningTool(WearTool):
         max_drb (int): 最大耐久
     """
     cls_type = 'mining-tool'
+    _charcteristic = WearTool._charcteristic + ('strength',)
 
     def __init__(self, owner: int, name: str, durability: int,
                 strength: int) -> None:
@@ -371,7 +372,6 @@ class MiningTool(WearTool):
         """
         super().__init__(owner, name, durability)
         self.strength = strength
-        self.__charcteristic.append('strength')
 
 
 cls_map = {}  # cls_type与Class的映射，读取属性的时候用
@@ -412,6 +412,6 @@ mapping_file = Path(__file__).parent/'uz_mapping.yml'
 def load_uz_mapping():
     global uz_mapping
     with mapping_file.open(encoding='utf-8') as f:
-        uz_mapping = yaml.load(f)
+        uz_mapping = yaml.load(f, Loader=yaml.SafeLoader)
 
 load_uz_mapping()

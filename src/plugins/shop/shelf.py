@@ -6,17 +6,11 @@ import yaml
 import numpy as np
 import cv2
 from PIL import Image, ImageDraw, ImageFont
-try:
-    from src.common import RESPATH
-    from src.common.log import logger
-    from src.common.levelsystem import UserLevel
-    from src.common.itemsystem import cls_map, uz_mapping, WearTool
-    from src.utils.imghandler import draw_emoji_text, draw_text_shadow
-
-except ImportError:
-    from loguru import logger
-    RESPATH = r"E:\Develop\QQbot\resource"
-    from tmptst import draw_emoji_text, draw_text_shadow
+from src.common import RESPATH
+from src.common.log import logger
+from src.common.levelsystem import UserLevel
+from src.common.itemsystem import cls_map, uz_mapping, WearTool
+from src.utils.imghandler import draw_emoji_text, draw_text_shadow, text_box
 
 
 font_folder = Path(RESPATH)/'fonts'
@@ -50,17 +44,18 @@ shelf_other_base = Image.fromarray(cv2.cvtColor(shelf_other_reader, cv2.COLOR_BG
 del shelf_other_reader
 
 
-name_fnt = ImageFont.truetype(str(font_folder/'经典粗圆简.TTF'), 22)  # 用户名称、商品名称字体
+name_fnt = ImageFont.truetype(str(font_folder/'腾祥沁圆简w5.ttf'), 20)  # 用户名称、商品名称字体
 level_fnt = ImageFont.truetype(str(font_folder/'MSYHBD.TTC'), 24)  # 用户等级字体
 fund_fnt = ImageFont.truetype(str(font_folder/'GenJyuuGothic-Bold.ttf'), 17)  # 用户资金字体
 date_fnt = ImageFont.truetype(str(font_folder/'GenJyuuGothic-Heavy.ttf'), 20)  # 日期字体
 index_fnt = ImageFont.truetype(str(font_folder/'UDDigiKyokashoN-B.ttc'), 24)  # 商品索引字体
-flag_fnt = ImageFont.truetype(str(font_folder/'经典粗圆简.TTF'), 21)  # 商品标签字体，商品类型、商品售价的标签
-ppt_flag_fnt = ImageFont.truetype(str(font_folder/'经典粗圆简.TTF'), 15)  # 商品属性标签字体，属性、附魔、说明的标签
+flag_fnt = ImageFont.truetype(str(font_folder/'腾祥沁圆简-w4.ttf'), 21)  # 商品标签字体，商品类型、商品售价的标签
+type_fnt = ImageFont.truetype(str(font_folder/'腾祥沁圆简-w3.ttf'), 20)  # 商品类型字体
+ppt_flag_fnt = ImageFont.truetype(str(font_folder/'腾祥沁圆简-w4.ttf'), 15)  # 商品属性标签字体，属性、附魔、说明的标签
 price_fnt = ImageFont.truetype(str(font_folder/'GenJyuuGothic-Medium.ttf'), 21)  # 商品售价数字字体
-property_fnt = ImageFont.truetype(str(font_folder/'经典粗圆简.TTF'), 16)  # 商品属性字体，属性、附魔
+property_fnt = ImageFont.truetype(str(font_folder/'腾祥沁圆简-w3.ttf'), 16)  # 商品属性字体，属性、附魔
 value_fnt = ImageFont.truetype(str(font_folder/'UDDigiKyokashoN-B.ttc'), 16)  # 商品属性值字体
-description_fnt = ImageFont.truetype(str(font_folder/'经典粗圆简.TTF'), 13)  # 商品描述正文字体
+description_fnt = ImageFont.truetype(str(font_folder/'腾祥沁圆简-w3.ttf'), 13)  # 商品描述正文字体
 
 
 goods_file = Path(__file__).parent/'goods.yml'
@@ -74,8 +69,14 @@ def shop_interface(*items, **kw):
     count = len(items)
     if count < 8:
         resolution = (100 + count * 230, 640, 3)
+        user_coord = (14, 16)
+        date_coord = (435, 22)
+        items_coord = [(28, 85 + i * 227) for i in range(len(items))]  # 单列
     else:
         resolution = (100 + count // 2 * 230, 1200, 3)
+        user_coord = (28, 16)
+        date_coord = (992, 22)
+        items_coord = [(308 - 294 * (-1) ** i, 85 + i // 2 * 227) for i in range(len(items))]  # 双列左右交替
 
     bg = np.zeros(resolution, dtype=np.uint8)  # 临时BG
     bg[:] = (150, 100, 90)
@@ -111,14 +112,10 @@ def shop_interface(*items, **kw):
     timestr = now.strftime('%Y-%m-%d ') + meridiem
     logger.debug(f'current store time: {timestr}')
 
+    # commodities
+    item_cards = [commodity_card(index, item) for index, item in enumerate(items)]
+
     # main composition
-    if count < 8:
-        user_coord = (14, 16)
-        date_coord = (435, 22)
-    else:
-        user_coord = (28, 16)
-        date_coord = (992, 22)
-    
     bg.alpha_composite(header_user, user_coord)
     bg.alpha_composite(header_date, date_coord)
     bgdraw = ImageDraw.Draw(bg)
@@ -126,7 +123,7 @@ def shop_interface(*items, **kw):
         'xy': (date_coord[0] + 101, date_coord[1] + 58),
         'text': timestr,
         'font': date_fnt,
-        'fill': '#000000cc',
+        'fill': '#3C415C',
         'anchor': 'ms',
         'align': 'center',
         'stroke_width': 1,
@@ -136,26 +133,30 @@ def shop_interface(*items, **kw):
                     text_shadow=True, opacity=0.3, gen_new_img=False, **name_fnt_params)
     draw_text_shadow(bg, distance=4, **date_text_params)
     bgdraw.text(**date_text_params)
+    
+    for card, coord in zip(item_cards, items_coord):
+        bg.alpha_composite(card, coord)
 
     return bg
 
 
 def commodity_card(index: int, commodity: Dict):
+    # TODO: ICON, 属性数字字体和位置
     item_type = cls_map[commodity['type']]
-    if isinstance(item_type, WearTool):
+    if issubclass(item_type, WearTool):
         card = shelf_tool_base.copy()
         draw = ImageDraw.Draw(card)
         # index
-        draw.text(xy=(69, 52), text=str(index).zfill(2), fill='#FFFFFF', font=index_fnt, anchor='ms', align='center', stroke_width=1, stroke_fill='#111111')
+        draw.text(xy=(69, 52), text=str(index + 1).zfill(2), fill='#FFFFFF', font=index_fnt, anchor='ms', align='center', stroke_width=1, stroke_fill='#111111')
         # name
         draw.text(xy=(294, 49), text=commodity['name'], fill='#EFEFEF', font=name_fnt, anchor='ms', align='center', stroke_width=1, stroke_fill='#111111')
         # type
-        draw.text(xy=(190, 90), text=uz_mapping['type'][commodity['type']], fill='#2E4351', font=property_fnt, anchor='ms', align='center')
+        draw.text(xy=(190, 90), text=uz_mapping['type'][commodity['type']], fill='#2E4351', font=type_fnt, anchor='ms', align='center')
         # price
-        draw.text(xy=(394, 92), text=commodity['price'], fill='#2A3335', font=price_fnt, anchor='ms', align='center')
+        draw.text(xy=(394, 92), text=str(commodity['price']), fill='#2A3335', font=price_fnt, anchor='ms', align='center')
         # properties
         item_type : WearTool = cls_map[commodity['type']]
-        ppt_ls = item_type.__charcteristic.copy()  # 属性英文名列表
+        ppt_ls = list(item_type._charcteristic) # 属性英文名列表
         ppt_ls.remove('max_drb')  # 去掉最大耐久度属性
         ppt_zh_ls = [uz_mapping['property'][p] for p in ppt_ls]  # 属性中文名列表
         ppt_name = '\n'.join(ppt_zh_ls)
@@ -168,10 +169,17 @@ def commodity_card(index: int, commodity: Dict):
             draw.text(xy=(216, 168), text='无', fill='#1F1F1F', font=property_fnt, anchor='ms', align='center')
         else:
             status_name = '\n'.join([uz_mapping['status'][p] for p in status])
-            draw.multiline_text(xy=(157, 164), text=ppt_name, fill='#1F1F1F', font=property_fnt, anchor='lm', align='left')
+            draw.multiline_text(xy=(157, 164), text=status_name, fill='#1F1F1F', font=property_fnt, anchor='lm', align='left')
             values = '\n'.join([str(status[k]) for k in status])
             draw.multiline_text(xy=(267, 164), text=values, fill='#2E3941', font=value_fnt, anchor='rm', align='right')
         # description
+        description = commodity['description'] or ''
+        draw.multiline_text((306, 136), text=text_box(description, 233, description_fnt), fill='#1A1A1A', font=description_fnt)
+
+    else:
+        card = shelf_other_base.copy()
+    return card
+
 
 
 if __name__ == "__main__":
@@ -182,9 +190,10 @@ if __name__ == "__main__":
     user = A()
     user.level = 25
     user.fund = 13500
+    
     try:
         name = '绝对有解'
         # name = 'wdnmd🔷😄😝👌🥓wtd🥗🧀草🍣发动a✝🛐♏♒♊'
-        shop_interface(user=user, name=name).show()
+        shop_interface(*goods, user=user, name=name).show()
     except Exception as e:
         logger.exception(e)
