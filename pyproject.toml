@@ -22,6 +22,7 @@ nonebot-plugin-apscheduler = "^0.1.2"
 aiomysql = "^0.0.21"
 aiofiles = "^0.7.0"
 opencv-python = "^4.5.3"
+imageio = "^2.9.0"
 
 [tool.poetry.dev-dependencies]
 

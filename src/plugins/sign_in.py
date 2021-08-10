@@ -69,6 +69,8 @@ async def sign_(bot: Bot, event: MessageEvent):
 
         if today > last_sign_day:
             async with QbotDB() as botdb:
+                user.total_sign += 1
+                user.last_sign = datetime.now()
                 await botdb.update('update userinfo set `last_sign`=NOW(), total_sign=total_sign+1 where qq_number=%s;', (uid,))
             
             gndexp = cgauss(8, 2, 0)
@@ -100,7 +102,7 @@ async def querylevel(bot: Bot, event: MessageEvent):
             max = exp_step(user.level),
             fund = user.fund,
             total_sign = user.total_sign,
-            last_sign = user.last_sign if user.last_sign > datetime(2020, 11, 27) else '还未签到过'
+            last_sign = user.last_sign.strftime('%y-%m-%d %H:%M:%s') if user.last_sign > datetime(2020, 11, 27) else '还未签到过'
             )
         await query_level.finish(msg)
 

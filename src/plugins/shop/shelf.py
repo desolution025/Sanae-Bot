@@ -5,43 +5,42 @@ from typing import Dict
 import yaml
 import numpy as np
 import cv2
+import imageio
 from PIL import Image, ImageDraw, ImageFont
-from src.common import RESPATH
+
 from src.common.log import logger
 from src.common.levelsystem import UserLevel
 from src.common.itemsystem import cls_map, uz_mapping, WearTool
-from src.utils.imghandler import draw_emoji_text, draw_text_shadow, text_box
+from src.common.itemsystem.ui import *
+from src.utils import draw_emoji_text, draw_text_shadow, text_box, image2b64
 
 
-font_folder = Path(RESPATH)/'fonts'
-shop_ui_folder = Path(RESPATH)/'ui'/'shop'
+respath = Path(RESPATH)
+font_folder = respath/'fonts'
+shop_ui_folder = respath/'ui'/'shop'
+
 
 # 用户信息头
-header_user_reader = cv2.imread(str(shop_ui_folder/'shop_header_user.png'), cv2.IMREAD_UNCHANGED)
-header_user_base = Image.fromarray(cv2.cvtColor(header_user_reader, cv2.COLOR_BGRA2RGBA))
-header_user_shape = header_user_reader.shape
-del header_user_reader
+# header_user_reader = cv2.imread(str(shop_ui_folder/'shop_header_user.png'), cv2.IMREAD_UNCHANGED)
+# header_user_array = imageio.imread(shop_ui_folder/'shop_header_user.png')
+header_user_base = Image.fromarray(imageio.imread(shop_ui_folder/'shop_header_user.png'))
 
 # 日期头，日期信息不在此ui上覆盖，在下面附加
-header_date_reader = cv2.imread(str(shop_ui_folder/'shop_header_date.png'), cv2.IMREAD_UNCHANGED)
-header_date = Image.fromarray(cv2.cvtColor(header_date_reader, cv2.COLOR_BGRA2RGBA))
-header_date_shape = header_date_reader.shape
-del header_date_reader
+# header_date_reader = cv2.imread(str(shop_ui_folder/'shop_header_date.png'), cv2.IMREAD_UNCHANGED)
+# header_date_array = imageio.imread(shop_ui_folder/'shop_header_date.png')
+header_date = Image.fromarray(imageio.imread(shop_ui_folder/'shop_header_date.png'))
 
 # 工具类信息底板
-shelf_tool_reader = cv2.imread(str(shop_ui_folder/'shelf_tool.png'), cv2.IMREAD_UNCHANGED)
-shelf_tool_base = Image.fromarray(cv2.cvtColor(shelf_tool_reader, cv2.COLOR_BGRA2RGBA))
-del shelf_tool_reader
+# shelf_tool_reader = cv2.imread(str(shop_ui_folder/'shelf_tool.png'), cv2.IMREAD_UNCHANGED)
+shelf_tool_base = Image.fromarray(imageio.imread(shop_ui_folder/'shelf_tool.png'))
 
 # 符卡类信息底板
-shelf_sc_reader = cv2.imread(str(shop_ui_folder/'shelf_sc.png'), cv2.IMREAD_UNCHANGED)
-shelf_sc_base = Image.fromarray(cv2.cvtColor(shelf_sc_reader, cv2.COLOR_BGRA2RGBA))
-del shelf_sc_reader
+# shelf_sc_reader = cv2.imread(str(shop_ui_folder/'shelf_sc.png'), cv2.IMREAD_UNCHANGED)
+shelf_sc_base = Image.fromarray(imageio.imread(shop_ui_folder/'shelf_sc.png'))
 
 # 其它收藏品底板
-shelf_other_reader = cv2.imread(str(shop_ui_folder/'shelf_other.png'), cv2.IMREAD_UNCHANGED)
-shelf_other_base = Image.fromarray(cv2.cvtColor(shelf_other_reader, cv2.COLOR_BGRA2RGBA))
-del shelf_other_reader
+# shelf_other_reader = cv2.imread(str(shop_ui_folder/'shelf_other.png'), cv2.IMREAD_UNCHANGED)
+shelf_other_base = Image.fromarray(imageio.imread(shop_ui_folder/'shelf_other.png'))
 
 
 name_fnt = ImageFont.truetype(str(font_folder/'腾祥沁圆简w5.ttf'), 20)  # 用户名称、商品名称字体
@@ -52,9 +51,9 @@ index_fnt = ImageFont.truetype(str(font_folder/'UDDigiKyokashoN-B.ttc'), 24)  # 
 flag_fnt = ImageFont.truetype(str(font_folder/'腾祥沁圆简-w4.ttf'), 21)  # 商品标签字体，商品类型、商品售价的标签
 type_fnt = ImageFont.truetype(str(font_folder/'腾祥沁圆简-w3.ttf'), 20)  # 商品类型字体
 ppt_flag_fnt = ImageFont.truetype(str(font_folder/'腾祥沁圆简-w4.ttf'), 15)  # 商品属性标签字体，属性、附魔、说明的标签
-price_fnt = ImageFont.truetype(str(font_folder/'GenJyuuGothic-Medium.ttf'), 21)  # 商品售价数字字体
+price_fnt = ImageFont.truetype(str(font_folder/'Helvetica-Neue-2.ttf'), 21)  # 商品售价数字字体
 property_fnt = ImageFont.truetype(str(font_folder/'腾祥沁圆简-w3.ttf'), 16)  # 商品属性字体，属性、附魔
-value_fnt = ImageFont.truetype(str(font_folder/'UDDigiKyokashoN-B.ttc'), 16)  # 商品属性值字体
+value_fnt = ImageFont.truetype(str(font_folder/'Helvetica-Neue-2.ttf'), 16)  # 商品属性值字体
 description_fnt = ImageFont.truetype(str(font_folder/'腾祥沁圆简-w3.ttf'), 13)  # 商品描述正文字体
 
 
@@ -64,7 +63,17 @@ with goods_file.open(encoding='utf-8') as f:
     goods = yaml.load(f)
 
 
-def shop_interface(*items, **kw):
+def shop_interface(*items: Dict, user: UserLevel, name: str):
+    """商店货架界面
+
+    Args:
+        *itmes (Dict): 所有商品
+        user (UserLevel): 用户
+        name (str): 用户昵称
+
+    Returns:
+        str: base64图片
+    """
     # 根据商品数量确定页面大小
     count = len(items)
     if count < 8:
@@ -83,14 +92,12 @@ def shop_interface(*items, **kw):
     bg = Image.fromarray(cv2.cvtColor(bg, cv2.COLOR_BGR2RGBA), mode='RGBA')
 
     # header-userinfo
-    user = kw['user']
     name_fnt_params = {
         'font': name_fnt,
         'fill': '#FFFFFF',
         'stroke_width': 1,
         'stroke_fill': '#111111'
     }
-    # header_user = draw_emoji_text(header_user_base, kw['name'], emoji_size=22, positon=(76, 25), text_shadow=True, opacity=0.3, **name_fnt_params)
     header_user = header_user_base.copy()
     user_draw = ImageDraw.Draw(header_user)
     user_draw.text((33, 46), text=str(user.level), fill='#1E3643', font=level_fnt, anchor='ms', align='center')
@@ -129,7 +136,7 @@ def shop_interface(*items, **kw):
         'stroke_width': 1,
         'stroke_fill': '#FFFFFF'
     }
-    draw_emoji_text(bg, kw['name'], emoji_size=22, positon=(user_coord[0] + 72, user_coord[1] + 23),
+    draw_emoji_text(bg, name, emoji_size=22, positon=(user_coord[0] + 72, user_coord[1] + 23),
                     text_shadow=True, opacity=0.3, gen_new_img=False, **name_fnt_params)
     draw_text_shadow(bg, distance=4, **date_text_params)
     bgdraw.text(**date_text_params)
@@ -137,11 +144,19 @@ def shop_interface(*items, **kw):
     for card, coord in zip(item_cards, items_coord):
         bg.alpha_composite(card, coord)
 
-    return bg
+    return image2b64(bg)
 
 
 def commodity_card(index: int, commodity: Dict):
-    # TODO: ICON, 属性数字字体和位置
+    """生成商品卡片信息
+
+    Args:
+        index (int): 商品在当前货架的编号
+        commodity (Dict): 商品属性列表
+
+    Returns:
+        Image.Image: 商品卡片图片
+    """
     item_type = cls_map[commodity['type']]
     if issubclass(item_type, WearTool):
         card = shelf_tool_base.copy()
@@ -158,28 +173,36 @@ def commodity_card(index: int, commodity: Dict):
         item_type : WearTool = cls_map[commodity['type']]
         ppt_ls = list(item_type._charcteristic) # 属性英文名列表
         ppt_ls.remove('max_drb')  # 去掉最大耐久度属性
+        del ppt_ls[0]
+        ppt_ls.append('durability')  # 把耐久度放到最后
         ppt_zh_ls = [uz_mapping['property'][p] for p in ppt_ls]  # 属性中文名列表
         ppt_name = '\n'.join(ppt_zh_ls)
-        draw.multiline_text(xy=(44, 164), text=ppt_name, fill='#1F1F1F', font=property_fnt, anchor='lm', align='left')
+        draw.multiline_text(xy=(44, 165), text=ppt_name, fill='#1F1F1F', font=property_fnt, anchor='lm', align='left')
         values = '\n'.join([str(commodity[p]) for p in ppt_ls])
-        draw.multiline_text(xy=(112, 164), text=values, fill='#1F1F1F', font=value_fnt, anchor='rm', align='right')
+        draw.multiline_text(xy=(120, 165), text=values, fill='#1F1F1F', font=value_fnt, anchor='rm', align='right', spacing=5)
         # status
         status = commodity['status']
         if status is None:
             draw.text(xy=(216, 168), text='无', fill='#1F1F1F', font=property_fnt, anchor='ms', align='center')
         else:
             status_name = '\n'.join([uz_mapping['status'][p] for p in status])
-            draw.multiline_text(xy=(157, 164), text=status_name, fill='#1F1F1F', font=property_fnt, anchor='lm', align='left')
+            draw.multiline_text(xy=(157, 166), text=status_name, fill='#1F1F1F', font=property_fnt, anchor='lm', align='left')
             values = '\n'.join([str(status[k]) for k in status])
-            draw.multiline_text(xy=(267, 164), text=values, fill='#2E3941', font=value_fnt, anchor='rm', align='right')
+            draw.multiline_text(xy=(270, 166), text=values, fill='#2E3941', font=value_fnt, anchor='rm', align='right')
         # description
         description = commodity['description'] or ''
-        draw.multiline_text((306, 136), text=text_box(description, 233, description_fnt), fill='#1A1A1A', font=description_fnt)
+        draw.multiline_text((306, 136), text=text_box(description, 233, description_fnt), fill='#1A1A1A', font=description_fnt, spacing=5)
+        # icon
+        icon_coord = (476, 27)
+        if commodity['type'] == 'fishing-rod':
+            card.alpha_composite(Image.alpha_composite(icon_frame_n, icon_fishing_rod), icon_coord)
+        else:
+            card.alpha_composite(Image.alpha_composite(icon_frame_n, icon_missing), icon_coord)
 
     else:
         card = shelf_other_base.copy()
-    return card
 
+    return card
 
 
 if __name__ == "__main__":

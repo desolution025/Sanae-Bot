@@ -25,7 +25,7 @@ Miners_List = set()
 async def refresh_miners_list() -> Optional[int]:
     """刷新矿工数据列表 """
     async with QbotDB() as qb:
-        result = await qb.queryall("SELECT `uid`, achievement, `status` FROM miners")
+        result = await qb.queryall("SELECT `uid` FROM miners")
     global Miners_List
     Miners_List = set([r.uid for r in result])
     logger.success(f'连接数据库，读取到 {len(result)} 条矿工')

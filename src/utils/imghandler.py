@@ -13,7 +13,18 @@ from emoji import emoji_lis
 from imghdr import what
 
 
-__all__ = ('AntiShielding', 'draw_emoji_text')
+__all__ = ('image2b64', 'AntiShielding', 'draw_emoji_text', 'draw_text_shadow', 'text_box')
+
+
+def image2b64(image: Image.Image):
+    """PIL图片转base64"""
+
+    buffer = BytesIO()
+    if image.mode == 'RGBA':
+        image.save(buffer, format='png')
+    else:
+        image.save(buffer, format='jpeg', quality=90)
+    return 'base64://' + b64encode(buffer.getvalue()).decode('utf-8')
 
 
 # TODO: 换成cv2处理
@@ -96,12 +107,7 @@ class AntiShielding:
         Returns:
             str: Base64字符串，可以直接使用MessageSegment.image构建片段
         """
-        buffer = BytesIO()
-        if self.img.mode == 'RGBA':
-            self.img.save(buffer, format='png')
-        else:
-            self.img.save(buffer, format='jpeg', quality=90)
-        return 'base64://' + b64encode(buffer.getvalue()).decode('utf-8')
+        return image2b64(self.img)
 
 
 EMOJI_TYPE = 'apple'  # 采用哪种设备的emoji风格

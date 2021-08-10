@@ -1,6 +1,6 @@
 all:
   - type: fishing-rod
-    name: 低级钓竿
+    name: 低级的普通钓竿
     price: 10
     length: 1.2
     hardness: 50
@@ -9,7 +9,7 @@ all:
     description: "较短的鱼竿，适合新手用来钓小鱼。\n但看起来不是很耐用呢"
   
   - type: mining-tool
-    name: 低级矿镐
+    name: 易损耗的矿镐
     price: 10
     strength: 10
     durability: 10

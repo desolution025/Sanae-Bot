@@ -15,7 +15,7 @@ async def refresh_characters_ls():
     """刷新符卡角色列表"""
     global CHARACTER_LIST
     async with QbotDB() as qb:
-        result = await qb.queryall("SELECT character from spell_cards")
+        result = await qb.queryall("SELECT `character` from spell_cards;")
         CHARACTER_LIST = set([c.character for c in result])
     logger.success(f'读取到{len(CHARACTER_LIST)}个符卡角色')
 
@@ -384,7 +384,7 @@ async def refresh_items_list():
     async with QbotDB() as qb:
         # 读取工具类
         global Tools_Store
-        result = await qb.queryall('SELECT * FROM items;')
+        result = await qb.queryall('SELECT * FROM tools;')
         for r in result:
             if r.owner not in Tools_Store:
                 Tools_Store[r.owner] = []

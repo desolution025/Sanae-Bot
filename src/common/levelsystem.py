@@ -99,7 +99,7 @@ class UserLevel:
         if self.uid in self.__class__.user_ls:
             async with QbotDB() as qb:
                 info = await qb.queryone(
-                                    'select `level`, `exp`, fund, last_sign, total_sign from userinfo, achievement, `status`, spell_cards where qq_number=%s',
+                                    'select `level`, `exp`, fund, last_sign, total_sign, achievement, `status` from userinfo where qq_number=%s',
                                     (self.uid,)
                                     )
             self.level = info.level
@@ -107,8 +107,8 @@ class UserLevel:
             self.fund = info.fund
             self.last_sign = info.last_sign # 上次签到时间
             self.total_sign = info.total_sign
-            self.achievement = json.loads(info.achievement)
-            self.status = json.loads(info.status)
+            self.achievement = None if info.achievement is None else json.loads(info.achievement)
+            self.status = None if info.status is None else json.loads(info.status)
             if info.spell_cards is None:
                 self.spell_cards = None
             else:  # 读取拥有符卡时候要把string键值改为int键值
@@ -266,7 +266,7 @@ class UserLevel:
             await qb.update("UPDATE userinfo SET achievement=%s WHERE uid=%s;", (json.dumps(self.achievement), self.uid))
             logger.info(f'User {self.uid} got an achievement: {acv_name}')
 
-    async def got_card(self, cards: Dict[int: int]):
+    async def got_card(self, cards: Dict[int, int]):
         """用户获得符卡
         
         Args:

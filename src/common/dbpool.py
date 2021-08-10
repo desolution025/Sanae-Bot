@@ -128,9 +128,10 @@ class MysqlPool:
     @classmethod
     async def close_pool(cls):
         if cls._pool is not None:
-            cls._pool.close()
-            await cls._pool.wait_closed()
+            cls._pool.terminate()
             logger.info('Close mysql connection pool!')
+            await cls._pool.wait_closed()
+            logger.info('Close mysql connection completed!')
         else:
             logger.info('Did not created mysql connection pool, skip closing!')
 
