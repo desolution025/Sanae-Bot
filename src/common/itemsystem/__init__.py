@@ -66,8 +66,8 @@ class BaseTool(BaseItem):
     cls_type = 'basetool'
     _charcteristic = () # 特殊属性，对子类来说要定义特殊属性在序列化到数据库的时候将属性放到status中
 
-    def __init__(self, owner: int, name: str) -> None:
-        super().__init__(owner, name)
+    def __init__(self, owner: int, name: str, description: Optional[str]=None) -> None:
+        super().__init__(owner, name, description)
         self.id = None
         self.status = {}
 
@@ -79,8 +79,8 @@ class BaseTool(BaseItem):
                 Tools_Store[self.owner].append(self)
             else:
                 Tools_Store[self.owner] = [self]
-            await qb.insert('INSERT INTO items (`type`, `owner`, `name`) VALUES (%s, %s, %s)', 
-                            (self.type, self.owner, self.name))
+            await qb.insert('INSERT INTO items (`type`, `owner`, `name`, `status`) VALUES (%s, %s, %s, %s)', 
+                            (self.cls_type, self.owner, self.name, json.dumps(self._format_status())))
             last = await qb.queryone('SELECT LAST_INSERT_ID();')
             self.id = last['LAST_INSERT_ID()']
             logger.info(f'用户 {self.owner} 获得物品 {self.name}，编号 {self.id}')
@@ -188,8 +188,8 @@ class WearTool(BaseTool):
     cls_type = 'wear-tool'
     _charcteristic = BaseTool._charcteristic + ('durability', 'max_drb')
 
-    def __init__(self, owner: int, name: str, durability: int) -> None:
-        super().__init__(owner, name)
+    def __init__(self, owner: int, name: str, durability: int, description: Optional[str]=None) -> None:
+        super().__init__(owner, name, description)
         self.durability = durability
         self.max_drb = durability
 
@@ -234,9 +234,6 @@ class NonWearTool(BaseTool):
     """
     cls_type = 'non-wear-tool'
 
-    def __init__(self, owner: int, name: str) -> None:
-        super().__init__(owner, name)
-
 
 class CollectionItem(BaseItem):
     """
@@ -246,8 +243,8 @@ class CollectionItem(BaseItem):
     """
     cls_type = 'collection'
 
-    def __init__(self, owner: int, name: str) -> None:
-        super().__init__(owner, name)
+    def __init__(self, owner: int, name: str, description: Optional[str]=None) -> None:
+        super().__init__(owner, name, description)
         if self.ever_got():
             self.num = Collections_Store[owner][name]
         else:
@@ -262,7 +259,7 @@ class CollectionItem(BaseItem):
         """首次获得收藏品，在got方法中自动调用"""
         async with QbotDB() as qb:
             await qb.insert('INSERT INTO collections (`type`, `owner`, `name`, `num`) VALUES (%s, %s, %s, %s)',
-                            (self.type, self.owner, self.name, self.num))
+                            (self.cls_type, self.owner, self.name, self.num))
             logger.debug(f'用户 {self.owner} 首次获得收藏品 {self.name}')
 
     async def got(self, num: int=1):
@@ -334,7 +331,8 @@ class FishingRod(WearTool):
 
     def __init__(self, owner: int, name: str, durability: int,
                 length: int,
-                hardness: int) -> None:
+                hardness: int,
+                description: Optional[str]=None) -> None:
         """创建一个新鱼竿
 
         Args:
@@ -344,7 +342,7 @@ class FishingRod(WearTool):
             length (int): 鱼竿长度，影响最长能抛多远，长杆抛太近会降低上鱼概率
             hardness (int): 硬度，代替调性，决定最长的起竿时间，越硬越适合钓小鱼，应快速起竿，钓到大鱼起竿时间不对越容易断竿
         """
-        super().__init__(owner, name, durability)
+        super().__init__(owner, name, durability, description)
         self.length, self.hardness = length, hardness
 
 
@@ -361,7 +359,8 @@ class MiningTool(WearTool):
     _charcteristic = WearTool._charcteristic + ('strength',)
 
     def __init__(self, owner: int, name: str, durability: int,
-                strength: int) -> None:
+                strength: int,
+                description: Optional[str]=None) -> None:
         """创建一个新采矿工具
 
         Args:
@@ -370,7 +369,7 @@ class MiningTool(WearTool):
             durability (int): 耐久度
             strength (int): 强度，实际上决定掘进速度，强度越高一次能开采的层数越多
         """
-        super().__init__(owner, name, durability)
+        super().__init__(owner, name, durability, description)
         self.strength = strength
 
 
@@ -388,7 +387,7 @@ async def refresh_items_list():
         for r in result:
             if r.owner not in Tools_Store:
                 Tools_Store[r.owner] = []
-            item = Tools_Store[r.owner] = cls_map[r.type](r.owner, r.name)
+            item = Tools_Store[r.owner] = cls_map[r.type](r.owner, r.name, r.description)
             item.id = r.ID
             item.status = r.status
             item._attrs_from_status()

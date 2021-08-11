@@ -72,7 +72,7 @@ class UserLevel:
     @classmethod
     async def load_users_data(cls):
         async with QbotDB() as qb:
-            result = await qb.queryall('SELECT qq_number, achievement, `status` FROM userinfo')
+            result = await qb.queryall('SELECT qq_number FROM userinfo;')
         # cls.user_ls = [user.qq_number for user in result]  # 之前是只存用户数据id的
         for r in result:
             cls.user_ls[r.qq_number] = UserLevel(r.qq_number)
@@ -109,13 +109,6 @@ class UserLevel:
             self.total_sign = info.total_sign
             self.achievement = None if info.achievement is None else json.loads(info.achievement)
             self.status = None if info.status is None else json.loads(info.status)
-            if info.spell_cards is None:
-                self.spell_cards = None
-            else:  # 读取拥有符卡时候要把string键值改为int键值
-                strk = json.loads(info.spell_cards)
-                self.spell_cards = {}
-                for k in strk:
-                    self.spell_cards[int(k)] = strk[k]
         else:
             await self.create_user()
         self.loaded = True
