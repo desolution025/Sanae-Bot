@@ -102,7 +102,7 @@ async def querylevel(bot: Bot, event: MessageEvent):
             max = exp_step(user.level),
             fund = user.fund,
             total_sign = user.total_sign,
-            last_sign = user.last_sign.strftime('%Y-%m-%d %H:%M:%s') if user.last_sign > datetime(2020, 11, 27) else '还未签到过'
+            last_sign = user.last_sign.strftime('%Y-%m-%d %H:%M:%S') if user.last_sign > datetime(2020, 11, 27) else '还未签到过'
             )
         await query_level.finish(msg)
 

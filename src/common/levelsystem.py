@@ -112,6 +112,7 @@ class UserLevel:
         else:
             await self.create_user()
         self.loaded = True
+        logger.debug(f'读取用户信息: {self.uid}')
 
     async def levelup(self, bot: Bot, event: Optional[MessageEvent], botdb: QbotDB, *, gid: Optional[int]=None):
         """经验值足够时提升等级并发送升级提醒

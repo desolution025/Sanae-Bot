@@ -1,4 +1,4 @@
-from typing import Dict, Optional
+from typing import Optional
 from pathlib import Path
 import ujson as json
 
@@ -33,21 +33,19 @@ class BaseItem:
         type (str): 物品类型
         owner (int): 物品所属者
         name (str): 物品名字
-        description (Optional[str]): 物品描述
     """
     cls_type = 'baseitem'
 
-    def __init__(self, owner: int, name: str, description: Optional[str]=None) -> None:
+    def __init__(self, owner: int, name: str) -> None:
         """创建物品，创建完需要使用store方法来给用户绑定
 
         Args:
             owner (int): 物品所属者id
             name (str): 物品名字
-            description (Optional[str]): 物品描述.Default is None.
         """
         self.owner = owner
         self.name = name
-        self.description = description 
+        self.type = self.cls_type
 
 
 class BaseTool(BaseItem):
@@ -56,20 +54,23 @@ class BaseTool(BaseItem):
 
     工具类的实例为每个都是独立实例，每个实例有单独的状态，通常是附魔而来
     每个实例可以单独命名，以在使用时通过名字直接调用指定的实例
+    每个实例可以单独修改描述，供使用者方便区分自定义的工具的效果
     Attributs:
         id (int): 物品编号
         type (str): 物品类型
         owner (int): 物品所属者
         name (str): 物品名字
         status (List[Dict]): 物品状态、buff
+        description (str): 物品描述.Default is ''.
     """
     cls_type = 'basetool'
     _charcteristic = () # 特殊属性，对子类来说要定义特殊属性在序列化到数据库的时候将属性放到status中
 
-    def __init__(self, owner: int, name: str, description: Optional[str]=None) -> None:
-        super().__init__(owner, name, description)
+    def __init__(self, owner: int, name: str, description: str='') -> None:
+        super().__init__(owner, name)
         self.id = None
         self.status = {}
+        self.description = description
 
     async def store(self):
         """持久化存储物品，存储方式为单个实例为一条记录"""
@@ -80,7 +81,7 @@ class BaseTool(BaseItem):
             else:
                 Tools_Store[self.owner] = [self]
             await qb.insert('INSERT INTO items (`type`, `owner`, `name`, `status`) VALUES (%s, %s, %s, %s)', 
-                            (self.cls_type, self.owner, self.name, json.dumps(self._format_status())))
+                            (self.type, self.owner, self.name, json.dumps(self._format_status())))
             last = await qb.queryone('SELECT LAST_INSERT_ID();')
             self.id = last['LAST_INSERT_ID()']
             logger.info(f'用户 {self.owner} 获得物品 {self.name}，编号 {self.id}')
@@ -188,7 +189,7 @@ class WearTool(BaseTool):
     cls_type = 'wear-tool'
     _charcteristic = BaseTool._charcteristic + ('durability', 'max_drb')
 
-    def __init__(self, owner: int, name: str, durability: int, description: Optional[str]=None) -> None:
+    def __init__(self, owner: int, name: str, durability: int, description: str='') -> None:
         super().__init__(owner, name, description)
         self.durability = durability
         self.max_drb = durability
@@ -243,8 +244,8 @@ class CollectionItem(BaseItem):
     """
     cls_type = 'collection'
 
-    def __init__(self, owner: int, name: str, description: Optional[str]=None) -> None:
-        super().__init__(owner, name, description)
+    def __init__(self, owner: int, name: str) -> None:
+        super().__init__(owner, name)
         if self.ever_got():
             self.num = Collections_Store[owner][name]
         else:
@@ -259,7 +260,7 @@ class CollectionItem(BaseItem):
         """首次获得收藏品，在got方法中自动调用"""
         async with QbotDB() as qb:
             await qb.insert('INSERT INTO collections (`type`, `owner`, `name`, `num`) VALUES (%s, %s, %s, %s)',
-                            (self.cls_type, self.owner, self.name, self.num))
+                            (self.type, self.owner, self.name, self.num))
             logger.debug(f'用户 {self.owner} 首次获得收藏品 {self.name}')
 
     async def got(self, num: int=1):
@@ -332,7 +333,7 @@ class FishingRod(WearTool):
     def __init__(self, owner: int, name: str, durability: int,
                 length: int,
                 hardness: int,
-                description: Optional[str]=None) -> None:
+                description: str='') -> None:
         """创建一个新鱼竿
 
         Args:
@@ -360,7 +361,7 @@ class MiningTool(WearTool):
 
     def __init__(self, owner: int, name: str, durability: int,
                 strength: int,
-                description: Optional[str]=None) -> None:
+                description: str='') -> None:
         """创建一个新采矿工具
 
         Args:

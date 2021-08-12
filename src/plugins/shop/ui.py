@@ -29,7 +29,7 @@ header_date = Image.fromarray(imageio.imread(shop_ui_folder/'shop_header_date.pn
 shelf_buttom = Image.fromarray(imageio.imread(shop_ui_folder/'shop_bottom.png'))
 
 # 双列顶部命令文字
-shelf_top_command = Image.fromarray(imageio.imread(shop_ui_folder/'shop_command_text'))
+shelf_top_command = Image.fromarray(imageio.imread(shop_ui_folder/'shop_command_text.png'))
 
 # 工具类信息底板
 shelf_tool_base = Image.fromarray(imageio.imread(shop_ui_folder/'shelf_tool.png'))
@@ -69,12 +69,12 @@ def shop_interface(*items: Dict, user: UserLevel, name: str):
     # 根据商品数量确定页面大小
     count = len(items)
     if count < 8:
-        resolution = (134 + count * 230, 640, 3)
+        resolution = (150 + count * 230, 640, 3)
         user_coord = (14, 16)
         date_coord = (435, 22)
         items_coord = [(28, 85 + i * 227) for i in range(len(items))]  # 单列
         command = shelf_buttom
-        command_coord = (320, resolution[0] - 34)
+        command_coord = (0, resolution[0] - 60)
     else:
         resolution = (100 + count // 2 * 230, 1200, 3)
         user_coord = (28, 16)

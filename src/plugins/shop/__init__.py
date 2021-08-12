@@ -5,7 +5,7 @@ from nonebot import get_driver
 from nonebot import MatcherGroup
 from nonebot.rule import to_me
 
-from src.common import Bot, MessageEvent, T_State, MessageSegment, CANCEL_EXPRESSION
+from src.common import Bot, MessageEvent, T_State, MessageSegment, CANCEL_EXPRESSION, logger
 from src.common.rules import full_match
 from src.common.itemsystem import BaseTool, CollectionItem, cls_map
 from src.utils import async_exec, get_name, reply_header
@@ -15,9 +15,9 @@ from .ui import shop_interface, UserLevel
 
 driver = get_driver()
 
-@driver.on_startup()
+@driver.on_startup
 async def load_shelf_from_db():
-    Shelf.load_all_shelf_data()
+    await Shelf.load_all_shelf_data()
 
 
 shop = MatcherGroup(type='message', priority=2)
@@ -29,7 +29,7 @@ shopping = shop.on_message(rule=to_me()&full_match('商店'))
 @shopping.handle()
 async def open_store(bot: Bot, event: MessageEvent, state: T_State):
     async with UserLevel(event.user_id) as user:
-        async with Shelf() as shelf:
+        async with Shelf(event.user_id) as shelf:
             # 检测时间看是否刷新商店
             cru_time = datetime.now()
             if cru_time.hour >= 12:
@@ -41,17 +41,21 @@ async def open_store(bot: Bot, event: MessageEvent, state: T_State):
             # 计算下一次刷新时间，如果在刷新时间点进行操作会提示重新开启商店
             state['next_refresh_time'] = last_refresh_time + timedelta(hours=12)
             # 生成并发送商店界面
-            display = await async_exec(shop_interface, shelf.goods, user=user, name=get_name(event))
-            state['shelf'] = shelf.goods
+            display = await async_exec(shop_interface, *shelf.goods, user=user, name=get_name(event))
+            state['shelf'] = shelf
             await shopping.send(MessageSegment.image(display))
         state['user'] = user
     state['open_time'] = datetime.now()
-
+    state['back'] = False
 
 @shopping.receive()
-async def buy(bot: Bot, event: MessageEvent, state: T_State):
+async def pick_out(bot: Bot, event: MessageEvent, state: T_State):
+    if state['back']:  # 操作完成之后重复执行本操作，需要重新拾取信息
+        state['back'] = False
+        await shopping.reject()
     # 5分钟自动退出商店
-    if datetime.now()- state['open_time'] > timedelta(seconds=5):
+    if datetime.now()- state['open_time'] > timedelta(minutes=5):
+        logger.debug(f'{state["user"].uid} 开启的商店超时，自动关闭')
         await shopping.finish()
     cmd = event.message.extract_plain_text().strip()
     if cmd in CANCEL_EXPRESSION:
@@ -67,7 +71,7 @@ async def buy(bot: Bot, event: MessageEvent, state: T_State):
             await shopping.reject(reply('未指定要购买的道具编号'))
         if len(args) > 2:
             await shopping.reject(reply('参数不符合要求，仅能接收商品编号和数量两个参数，使用空格分隔'))
-        if not all(map(lambda x: x.isdigit(), str)):
+        if not all(map(lambda x: x.isdigit(), args)):
             await shopping.reject(reply('只能使用数字参数'))
         index = int(args[0])
         if index < 0 or index > len(state['shelf'].goods) + 1:
@@ -77,7 +81,8 @@ async def buy(bot: Bot, event: MessageEvent, state: T_State):
         if num > commodity['num']:
             await shopping.reject(reply('指定商品剩余数量不足'))
         user : UserLevel = state['user']
-        if cost:= commodity['price'] * num > user.fund:
+        cost =  commodity['price'] * num
+        if cost > user.fund:
             await shopping.reject(reply(f'需 {cost} 金币购买 {num} 个 {commodity["name"]}，资金不足'))
         state['index'] = index
         state['num'] = num
@@ -86,17 +91,30 @@ async def buy(bot: Bot, event: MessageEvent, state: T_State):
         await shopping.reject()
 
 @shopping.receive()
-async def buy(bot: Bot, event: MessageEvent, state: T_State):
+async def confirm_buy(bot: Bot, event: MessageEvent, state: T_State):
     if event.message.extract_plain_text().strip() == '确认':
         index = state['index']
         num = state['num']
         user :UserLevel = state['user']
-        commodity = state['shelf'].goods[index]
-        cost = commodity['price'] * num
         shelf_ :Shelf = state['shelf']
-        await user.turnover(-cost)
-        await shelf_.sold(index, num)
-        item_class = cls_map(commodity['type'])
+        commodity = shelf_.goods[index]
+        cost = commodity['price'] * num
+        item_class = cls_map[commodity['type']]
         if issubclass(item_class, BaseTool):
-            # TODO: 修改物品类中的decription属性的位置
-            tool = item_class(event.user_id, commodity['name'])
+            params = {'name': commodity['name'], 'description': commodity['description'] or ''}
+            for prop in item_class._charcteristic:
+                params[prop] = commodity[prop]
+            tool = item_class(event.user_id, **params)
+            tool.status = commodity['status'] or {}
+            await tool.store()
+        elif issubclass(item_class, CollectionItem):
+            collec = item_class(event.user_id, name=commodity['name'])
+            await collec.got(num=num)
+        await shelf_.sold(index, num)
+        await user.turnover(-cost)
+        await shopping.send(f"成功购买 {commodity['name']} {num}个")
+    else:
+        await shopping.send('未输入确认信息，已为您取消购买操作')
+
+    state['back'] = True
+    await pick_out(bot, event, state)  # TODO： 试过了，不行，单独写规则吧

@@ -97,8 +97,8 @@ class Shelf:
             index (int): 商品在货架上的编号
             num (int): 售出的数量
         """
-        self.goods[index] -= num
-        await self._store_info
+        self.goods[index]['num'] -= num
+        await self._store_info()
 
     async def __aenter__(self):
         if not self.loaded:
